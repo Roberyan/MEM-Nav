@@ -1,0 +1,8 @@
+.DS_Store
+.idea/
+pretrain_data_collection/habitat-lab/
+__pycache__/
+*.pyc
+data/*/
+habitat-lab
+data/*.tar
