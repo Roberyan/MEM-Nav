@@ -26,3 +26,49 @@ pip install -e habitat-baselines
 ```
 
 ## Dataset Download
+
+Recommend to create a folder and download data in the folder
+```bash
+mkdir -p data
+cd data
+```
+
+General Usage of habitat to download data
+```bash 
+python -m habitat_sim.utils.datasets_download --uids habitat_test_scenes --data-path ./
+
+python -m habitat_sim.utils.datasets_download --uids habitat_test_pointnav_dataset --data-path ./
+```
+
+### Download HM3D scenes
+[official link for scene data](https://github.com/facebookresearch/habitat-sim/blob/main/DATASETS.md#habitat-matterport-3d-research-dataset-hm3d)
+[official link for task data](https://github.com/facebookresearch/habitat-lab/blob/main/DATASETS.md#task-datasets)
+
+``` bash
+# scene data downloading
+MATTERPORT_TOKEN_ID=ead2abaa44071dd5
+MATTERPORT_TOKEN_SECRET=dfe9bcd56c2eecd2092de895f95ba4cc
+DATA_DIR="./"
+
+python -m habitat_sim.utils.datasets_download \
+  --username $MATTERPORT_TOKEN_ID --password $MATTERPORT_TOKEN_SECRET \
+  --uids hm3d_minival_v0.2 \
+  --data-path $DATA_DIR 
+
+python -m habitat_sim.utils.datasets_download \
+  --username $MATTERPORT_TOKEN_ID --password $MATTERPORT_TOKEN_SECRET \
+  --uids hm3d_train_v0.2 \
+  --data-path $DATA_DIR 
+
+python -m habitat_sim.utils.datasets_download \
+  --username $MATTERPORT_TOKEN_ID --password $MATTERPORT_TOKEN_SECRET \
+  --uids hm3d_val_v0.2 \
+  --data-path $DATA_DIR 
+
+# objnav data downloading
+wget https://dl.fbaipublicfiles.com/habitat/data/datasets/objectnav/hm3d/v1/objectnav_hm3d_v1.zip
+unzip objectnav_hm3d_v1.zip
+mkdir -p ./datasets/objectnav/hm3d
+mv objectnav_hm3d_v1 ./datasets/objectnav/hm3d/v1
+rm objectnav_hm3d_v1.zip
+```
