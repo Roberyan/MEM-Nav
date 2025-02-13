@@ -40,7 +40,7 @@ python -m habitat_sim.utils.datasets_download --uids habitat_test_scenes --data-
 python -m habitat_sim.utils.datasets_download --uids habitat_test_pointnav_dataset --data-path ./
 ```
 
-### Download HM3D scenes
+### Download HM3D Dataset
 [official link for scene data](https://github.com/facebookresearch/habitat-sim/blob/main/DATASETS.md#habitat-matterport-3d-research-dataset-hm3d)
 [official link for task data](https://github.com/facebookresearch/habitat-lab/blob/main/DATASETS.md#task-datasets)
 
@@ -71,4 +71,15 @@ unzip objectnav_hm3d_v1.zip
 mkdir -p ./datasets/objectnav/hm3d
 mv objectnav_hm3d_v1 ./datasets/objectnav/hm3d/v1
 rm objectnav_hm3d_v1.zip
+```
+
+### Download Gibson Dataset
+[official link for scene data](https://github.com/facebookresearch/habitat-lab?tab=readme-ov-file#scenes-datasets)
+[task data from SGM](https://github.com/sx-zhang/SGM/tree/main)
+
+```bash
+# objnav data downloading
+wget -O gibson_objectnav_episodes.tar.gz https://utexas.box.com/shared/static/tss7udt3ralioalb6eskj3z3spuvwz7v.gz
+tar -xvzf gibson_objectnav_episodes.tar.gz && rm gibson_objectnav_episodes.tar.gz
+mv gibson datasets/objectnav
 ```
