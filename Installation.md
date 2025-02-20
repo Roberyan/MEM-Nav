@@ -5,6 +5,8 @@ conda_env_name=mem-nav
 conda create -n $conda_env_name python=3.9 cmake=3.14.0 -y
 conda activate $conda_env_name
 
+pip install torch==1.12+cu102 torchvision torchaudio -f https://download.pytorch.org/whl/torch_stable.html
+
 conda install -c conda-forge imageio-ffmpeg
 
 git clone https://github.com/facebookresearch/habitat-sim.git

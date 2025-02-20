@@ -1,7 +1,8 @@
 RedNet/model/*
 vis/*
 tmp/*
-data/*
+data/*/*
 *.symlink
 **/__pycache__/
 habitat*
+wandb
