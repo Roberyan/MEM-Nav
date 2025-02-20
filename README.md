@@ -24,10 +24,23 @@ State-of-the-art approaches to ObjectGoal navigation rely on reinforcement learn
 
 Clone the current repo and required submodules:
 ```
-git clone git@github.com:srama2512/PONI.git
+git clone https://github.com/srama2512/PONI.git
 cd PONI
-git submodule init
-git submodule update
+
+cd dependencies
+git clone https://github.com/srama2512/astar_pycpp.git
+git clone https://github.com/facebookresearch/habitat-lab.git
+git clone https://github.com/facebookresearch/habitat-sim.git
+
+cd astar_pycpp
+git checkout 7b1e9ea
+
+cd ../habitat-lab
+git checkout bc85d09
+
+cd ../habitat-sim
+git checkout fc7fb11
+
 export PONI_ROOT=<PATH TO PONI/>
 ```
  Create a conda environment:
