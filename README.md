@@ -56,17 +56,17 @@ conda install pytorch==1.9.1 torchvision==0.10.1 torchaudio==0.9.1 cudatoolkit=1
 
 Install dependencies:
 ```
-cd $PONI_ROOT/dependencies/habitat-lab
-pip install -r requirements.txt
-python setup.py develop --all
-
 cd $PONI_ROOT/dependencies/habitat-sim
 pip install -r requirements.txt
 python setup.py install --headless --with-cuda
 
+cd $PONI_ROOT/dependencies/habitat-lab
+pip install -r requirements.txt
+pip install -e .
+
 python -m pip install detectron2 -f https://dl.fbaipublicfiles.com/detectron2/wheels/cu102/torch1.9/index.html
 
-pip install torch-scatter -f https://data.pyg.org/whl/torch-1.9.0+cu102.html
+pip install torch-scatter==1.4.0 -f https://data.pyg.org/whl/torch-1.9.0+cu102.html
 
 cd $PONI_ROOT/dependencies/astar_pycpp && make
 ```
