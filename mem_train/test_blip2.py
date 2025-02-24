@@ -17,7 +17,7 @@ device = torch.device("cuda:0") if torch.cuda.is_available() else "cpu"
 if __name__ == "__main__":
     
     raw_image = Image.open("./demo_image/demo_img0.png").convert("RGB")
-    txt_cmd = "go to the window"
+    txt_cmd = "Describe the image in details" # go to the window
 
     model, vis_processors, txt_processors = load_model_and_preprocess(
         name="blip2_feature_extractor", 
@@ -36,11 +36,11 @@ if __name__ == "__main__":
     features_image = model.extract_features(sample, mode="image")
     features_text = model.extract_features(sample, mode="text")
     print(features_image.image_embeds.shape) # torch.Size([1, 32, 768])
-    print(features_text.text_embeds.shape)   # torch.Size([1, 12, 768])
+    print(features_text.text_embeds.shape)   # torch.Size([1, x, 768])
 
     # Normalized low-dimensional unimodal features
     # low-dimensional projected features
     print(features_image.image_embeds_proj.shape) # torch.Size([1, 32, 256])
-    print(features_text.text_embeds_proj.shape) # torch.Size([1, 12, 256])
+    print(features_text.text_embeds_proj.shape) # torch.Size([1, x, 256])
     similarity = (features_image.image_embeds_proj @ features_text.text_embeds_proj[:,0,:].t()).max()
     print(similarity) # tensor([[0.3642]])
