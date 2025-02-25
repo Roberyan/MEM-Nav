@@ -1,7 +1,5 @@
 import math
 import os
-import sys
-
 import cv2
 import numpy as np
 import skimage.morphology
@@ -20,7 +18,7 @@ import agents.utils.visualization as vu
 from RedNet.RedNet_model import load_rednet
 from constants import mp_categories_mapping
 import torch
-from get_point_score import *
+
 
 class Sem_Exp_Env_Agent(ObjectGoal_Env21):
     """The Sem_Exp environment agent class. A seperate Sem_Exp_Env_Agent class
@@ -90,11 +88,6 @@ class Sem_Exp_Env_Agent(ObjectGoal_Env21):
         self.collision_n = 0
 
         obs, info = super().reset()
-        store_obs=obs.transpose(1, 2, 0)
-        # print(obs.shape)
-        # print(store_obs.shape)
-        # print("!!!")
-        # np.save("vis/3d_score/sample_T.npy",store_obs)
         obs = self._preprocess_obs(obs)
 
         self.obs_shape = obs.shape
@@ -120,7 +113,6 @@ class Sem_Exp_Env_Agent(ObjectGoal_Env21):
         if args.visualize or args.print_images:
             self.vis_image = vu.init_vis_image(self.goal_name, self.legend)
 
-        # print(obs.shape)
         return obs, info
 
     def plan_act_and_preprocess(self, planner_inputs):
@@ -172,7 +164,6 @@ class Sem_Exp_Env_Agent(ObjectGoal_Env21):
             self.collision_n = 0
 
         if self.args.visualize or self.args.print_images:
-
             self._visualize(planner_inputs)
 
         if action >= 0:
@@ -196,8 +187,6 @@ class Sem_Exp_Env_Agent(ObjectGoal_Env21):
             obs = self._preprocess_obs(obs) 
             self.last_action = action['action']
             self.obs = obs
-
-            info['last_action'] = action['action'] # Updated to get action info as well
             self.info = info
             info['eve_angle'] = self.eve_angle
 
@@ -213,8 +202,6 @@ class Sem_Exp_Env_Agent(ObjectGoal_Env21):
         else:
             self.last_action = None
             self.info["sensor_pose"] = [0., 0., 0.]
-            info['last_action'] = None # Updated to get action info as well
-
             return np.zeros(self.obs_shape), self.fail_case, False, self.info
 
     def _plan(self, planner_inputs):
@@ -393,7 +380,6 @@ class Sem_Exp_Env_Agent(ObjectGoal_Env21):
     def _preprocess_obs(self, obs, use_seg=True):
         args = self.args
         # print("obs: ", obs)
-
         obs = obs.transpose(1, 2, 0)
         rgb = obs[:, :, :3]
         depth = obs[:, :, 3:4]
@@ -404,14 +390,10 @@ class Sem_Exp_Env_Agent(ObjectGoal_Env21):
             sem_seg_pred = np.zeros((rgb.shape[0], rgb.shape[1], 15 + 1))
             for i in range(16):
                 sem_seg_pred[:,:,i][semantic == i+1] = 1
-        else:
-            # print("sem_exp_preprocess_semantic")
+        else: 
             red_semantic_pred, semantic_pred = self._get_sem_pred(
                 rgb.astype(np.uint8), depth, use_seg=use_seg)
-            # print(red_semantic_pred.shape)
-            # print(semantic_pred.shape)
-            # print(mp_categories_mapping)
-            # sys.exit(0)
+            
             sem_seg_pred = np.zeros((rgb.shape[0], rgb.shape[1], 15 + 1))   
             for i in range(0, 15):
                 # print(mp_categories_mapping[i])
@@ -423,14 +405,12 @@ class Sem_Exp_Env_Agent(ObjectGoal_Env21):
             sem_seg_pred[:,:,4][semantic_pred[:,:,4] == 1] = 1
             sem_seg_pred[:,:,5][semantic_pred[:,:,5] == 1] = 1
 
-
         # sem_seg_pred = self._get_sem_pred(
         #     rgb.astype(np.uint8), depth, use_seg=use_seg)
 
         depth = self._preprocess_depth(depth, args.min_depth, args.max_depth)
 
         ds = args.env_frame_width // args.frame_width  # Downscaling factor
-
         if ds != 1:
             rgb = np.asarray(self.res(rgb.astype(np.uint8)))
             depth = depth[ds // 2::ds, ds // 2::ds]
@@ -479,13 +459,8 @@ class Sem_Exp_Env_Agent(ObjectGoal_Env21):
                                         args.exp_name)
         ep_dir = '{}/episodes/thread_{}/eps_{}/'.format(
             dump_dir, self.rank, self.episode_no)
-        score_dir = '{}/episodes/thread_{}/score_{}/'.format(
-            dump_dir, self.rank, self.episode_no)
-
         if not os.path.exists(ep_dir):
             os.makedirs(ep_dir)
-        if not os.path.exists(score_dir):
-            os.makedirs(score_dir)
 
         local_w = inputs['map_pred'].shape[0]
 
@@ -527,7 +502,7 @@ class Sem_Exp_Env_Agent(ObjectGoal_Env21):
             f_pos = np.argwhere(goal == 1)
             # fmb = get_frontier_boundaries((f_pos[0][0], f_pos[0][1]))
             # goal_fmb = skimage.draw.circle_perimeter(int((fmb[0]+fmb[1])/2), int((fmb[2]+fmb[3])/2), 23)
-            goal_fmb = skimage.draw.circle_perimeter(f_pos[0][0], f_pos[0][1], int(local_w/4-2))
+            goal_fmb = skimage.draw.circle_perimeter(f_pos[0][0], f_pos[0][1], local_w/4-2)
             goal_fmb[0][goal_fmb[0] > local_w-1] = local_w-1
             goal_fmb[1][goal_fmb[1] > local_w-1] = local_w-1
             goal_fmb[0][goal_fmb[0] < 0] = 0
@@ -575,5 +550,4 @@ class Sem_Exp_Env_Agent(ObjectGoal_Env21):
                 dump_dir, self.rank, self.episode_no,
                 self.rank, self.episode_no, self.timestep)
             cv2.imwrite(fn, self.vis_image)
-
 
