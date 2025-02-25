@@ -59,6 +59,7 @@ Install dependencies:
 cd $PONI_ROOT/dependencies/habitat-sim
 pip install -r requirements.txt
 python setup.py install --headless --with-cuda
+python setup.py build --build-datatool # tools to extract gibson semantic
 
 cd $PONI_ROOT/dependencies/habitat-lab
 pip install -r requirements.txt

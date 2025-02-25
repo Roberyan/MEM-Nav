@@ -9,6 +9,11 @@ Target dir: `$PONI_ROOT/data/scene_datasets/gibson_semantic`
 * Convert the semantic annotations to habitat format following instructions in [habitat-sim](https://github.com/facebookresearch/habitat-sim/blob/main/DATASETS.md#gibson-and-3dscenegraph-datasets).
 
 
+```bash
+# go to habitat-sim
+tools/gen_gibson_semantics.sh /home/marmot/Boyang/3DSceneGraph_tiny_and_medium/automated_graph /media/onedrive/Boyang/gibson_tiny_and_medium $PONI_ROOT/data/scene_datasets/gibson_semantic
+```
+
 ## Matterport3D dataset
 URL: https://niessner.github.io/Matterport/ </br>
 Target dir: `$PONI_ROOT/data/scene_datasets/mp3d`
