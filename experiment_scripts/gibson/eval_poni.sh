@@ -14,9 +14,10 @@ python eval_poni.py \
   --seed 100 \
   --eval 1 \
   --pf_model_path $MODEL_PATH \
-  -d $EXPT_ROOT/gibson_objectnav \
+  -d $EXPT_ROOT/tmp/gibson_objectnav \
   --num_local_steps 1 \
   --exp_name "seed_100" \
   --global_downscaling 1 \
-  --mask_nearest_locations \
-  --pf_masking_opt 'unexplored'
+  --mask_nearest_locations 
+  # --pf_masking_opt 'unexplored' \
+  # --print_images 1 --num_pf_maps 3 -n 1
