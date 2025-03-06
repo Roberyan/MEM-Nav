@@ -1,3 +1,6 @@
+git config --local user.name "Roberyan"
+git config --local user.email "new-email@example.com"
+
 export PONI_ROOT=$PWD
 export PYTHONPATH=$PYTHONPATH:$PONI_ROOT
 
