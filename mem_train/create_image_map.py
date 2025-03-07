@@ -23,6 +23,7 @@ import numpy as np
 import os.path as osp
 import _pickle as cPickle
 import skimage.morphology as skmp
+import habitat_sim.utils.common as common_utils
 
 from PIL import Image, ImageFont, ImageDraw
 from torch.utils.data import Dataset
@@ -205,12 +206,18 @@ def visualize_sem_map(sem_map, selected_point=None, selected_angle=None, with_pa
     
     # --- Draw oriented triangle marker for the selected point ---
     if selected_point is not None and selected_angle is not None:
-        triangle_size = max(10, int(0.02 * sem_map.shape[0]))
+        triangle_size = max(8, int(0.015 * sem_map.shape[0]))  
+        
+        # Adjusted shape for clearer direction indication (longer tip)
+        # Scaled-down version (80% of original size)
+        scale_factor = 0.8
         local_triangle = np.array([
-            [2/3 * triangle_size, 0],
-            [-1/3 * triangle_size, -triangle_size/2],
-            [-1/3 * triangle_size,  triangle_size/2]
+            [triangle_size * scale_factor, 0],
+            [-triangle_size/2 * scale_factor, -triangle_size/3 * scale_factor],
+            [-triangle_size/2 * scale_factor, triangle_size/3 * scale_factor]
         ], dtype=np.float32)
+
+        # Rotation logic remains the same
         theta_rad = np.deg2rad(selected_angle)
         R = np.array([
             [np.cos(theta_rad), -np.sin(theta_rad)],
@@ -283,7 +290,7 @@ def get_habitat_config(
         split = 'val',
         image_width=1024,
         image_height=1024,
-        camera_hfov=90
+        camera_hfov=79
     ):
     # ✅ Load Habitat config
     config = habitat.get_config(config_path)
@@ -303,6 +310,7 @@ def get_habitat_config(
     config.SIMULATOR.RGB_SENSOR.WIDTH = image_width
     config.SIMULATOR.RGB_SENSOR.HEIGHT = image_height
     config.SIMULATOR.RGB_SENSOR.HFOV = camera_hfov
+    config.SIMULATOR.RGB_SENSOR.NOISE_MODEL = "None"
 
     config.SIMULATOR.DEPTH_SENSOR.WIDTH = image_width
     config.SIMULATOR.DEPTH_SENSOR.HEIGHT = image_height
@@ -323,7 +331,7 @@ def get_habitat_config(
     config.freeze()
     return config
 
-
+random.seed(42)
 
 if __name__ == "__main__":
     grid_size = 0.05 # m
@@ -341,10 +349,25 @@ if __name__ == "__main__":
 
     visibility_size = 3.0
 
+    TMP_SAVE_DIR = "tmp/map_image"
+    os.makedirs(TMP_SAVE_DIR, exist_ok=True)
+
+    random.shuffle(available_scenes)
+
     for scene_name in available_scenes:
         scene_sem_map_path =  os.path.join(SEM_MAP_SAVE_ROOT, f"{scene_name}.h5")
         scene_glb_path = os.path.join(SCENE_DIR, f'{scene_name}.glb')
         scene_navmesh_path =  os.path.join(SCENE_DIR, f'{scene_name}.navmesh')
+
+        # Load Habitat config
+        config = get_habitat_config(scene_name=scene_name)
+        sim = habitat.sims.make_sim("Sim-v0", config=config.SIMULATOR)
+        if os.path.exists(scene_navmesh_path):
+            sim.pathfinder.load_nav_mesh(scene_navmesh_path)
+            print(f"Using NavMesh: {scene_navmesh_path}")
+
+        # Initialize the agent
+        agent = sim.get_agent(0)
 
         with h5py.File(scene_sem_map_path, 'r') as fp:
             floor_ids = sorted([key for key in fp.keys() if is_int(key)])
@@ -354,6 +377,9 @@ if __name__ == "__main__":
                 map_y = maps_info[scene_name][floor_id]['y_min']
                 resolution = maps_info[scene_name]['resolution']
                 map_semantic = np.array(fp[floor_id]['map_semantic'])
+
+                tmp_scene_save_dir = os.path.join(TMP_SAVE_DIR, name)
+                os.makedirs(tmp_scene_save_dir, exist_ok=True)
 
                 # Convert to one-hot if needed (here we use the original sem_map)
                 # semmap_oh = convert_maps_to_oh(map_semantic, dset=dset)
@@ -378,58 +404,60 @@ if __name__ == "__main__":
 
                  # Optionally, convert a sampled pixel to world coordinate:
                 
-                sampled_pixel = random.choice(nav_coords_px)
-                # Sample a heading from multiples of 30 degrees.
-                sampled_angle = random.choice(range(0, 360, 30))
-                print(f"{name} sampled navigable pixel {sampled_pixel} with direction {sampled_angle}°")
-                map_img_with_sampled_point = visualize_sem_map(map_semantic, selected_point=sampled_pixel, selected_angle=sampled_angle)
-                cv2.imwrite("tmp/test.png", map_img_with_sampled_point)
-                
-                # --- try get the corresponding position in habitat sim and extract image
-                sampled_world_coord = pixel_to_world(sampled_pixel, resolution, np.array(map_world_shift), map_y)
-                print(f"{name} sampled navigable pixel {sampled_pixel} -> world position {sampled_world_coord}")
+                for _ in range(5): # get 100 points
+                    sampled_pixel = random.choice(nav_coords_px)
+                    
+                    # Sample a heading from multiples of 30 degrees.
+                    sampled_angle = random.choice(range(0, 360, 30))
+                    print(f"{name} sampled navigable pixel {sampled_pixel} with direction {sampled_angle}°")
+                    
+                    sample_save_dir = os.path.join(tmp_scene_save_dir, f"location_{sampled_pixel}_direction_{sampled_angle}")
+                    os.makedirs(sample_save_dir, exist_ok=True)
 
-                # Load Habitat config
-                config = get_habitat_config(scene_name=scene_name)
-                sim = habitat.sims.make_sim("Sim-v0", config=config.SIMULATOR)
-                if os.path.exists(scene_navmesh_path):
-                    sim.pathfinder.load_nav_mesh(scene_navmesh_path)
-                    print(f"Using NavMesh: {scene_navmesh_path}")
+                    map_img_with_sampled_point = visualize_sem_map(map_semantic, selected_point=sampled_pixel, selected_angle=sampled_angle)
+                    cv2.imwrite(f"{sample_save_dir}/topdown_map.png", map_img_with_sampled_point)
+                    
+                    # --- try get the corresponding position in habitat sim and extract image
+                    sampled_world_coord = pixel_to_world(sampled_pixel, resolution, np.array(map_world_shift), map_y)
+                    print(f"{name} sampled navigable pixel {sampled_pixel} -> world position {sampled_world_coord}")
 
-                # Initialize the agent
-                agent = sim.get_agent(0)
-                agent_state = agent.get_state()
 
-                valid_position = sim.pathfinder.get_random_navigable_point()
-                agent_location = valid_position
-                rotation_quat = np.array([1, 0, 0, 0])  # Identity quaternion (no rotation)
-
-                agent_state.position = agent_location
-                agent_state.rotation = rotation_quat  # Now a valid quaternion
-                agent.set_state(agent_state)
-                print(f"✅ Agent placed at: {valid_position}")
-
-                agent_state.position = np.array(sampled_world_coord)
-                # Set a default orientation (e.g., identity quaternion).
-                agent_state.rotation = np.array([1, 0, 0, 0])
-                agent.set_state(agent_state)
-                print(f"Agent placed at world coordinate: {sampled_world_coord}")
-
-                # --- Capture surrounding images from that position ---
-                angles = [0, 90, 180, 270]
-                rgb_images = []
-                for angle in angles:
-                    # Rotate the agent around the Y-axis.
                     agent_state = agent.get_state()
-                    rotation = habitat_sim.utils.common.quat_from_angle_axis(np.deg2rad(angle), np.array([0, 1, 0]))
-                    agent_state.rotation = rotation
+
+                    habitat_angle = -(sampled_angle+90)%360
+
+                    sampled_quat = common_utils.quat_from_angle_axis(
+                        np.deg2rad(habitat_angle), 
+                        np.array([0, 1, 0])
+                    )
+                    agent_state.position = np.array(sampled_world_coord)
+                    agent_state.rotation = sampled_quat
                     agent.set_state(agent_state)
-                    obs = sim.get_sensor_observations()
-                    rgb_img = obs["rgb"]
-                    # Convert from RGB to BGR for cv2.imshow if needed.
-                    rgb_bgr = cv2.cvtColor(rgb_img, cv2.COLOR_RGB2BGR)
-                    rgb_images.append(rgb_bgr)
-                    cv2.imwrite(f"tmp/View {angle}.png", rgb_bgr)
-                panorama = np.hstack(rgb_images)
-                cv2.imwrite("tmp/Panorama.png", panorama)
-                sim.close()
+                    print("Agent placed at:", agent.get_state().position)
+                    print("Agent rotation (quaternion):", agent.get_state().rotation)
+
+                    # --- Capture surrounding images from that position ---
+                    rgb_images = []
+                    for rel_angle in [0, 90, 180, 270]:
+                        # Compute the absolute angle (map & simulation) for this view.
+                        abs_angle = (sampled_angle + rel_angle) % 360
+                        habitat_angle = -(abs_angle+90)%360
+                        agent_state = agent.get_state()
+
+                        rotation = common_utils.quat_from_angle_axis(np.deg2rad(habitat_angle), np.array([0, 1, 0]))
+                        agent_state.rotation = rotation
+                        agent.set_state(agent_state)
+                        
+                        obs = sim.get_sensor_observations()
+                        rgb_img = obs["rgb"]
+                        rgb_bgr = cv2.cvtColor(rgb_img, cv2.COLOR_RGB2BGR)
+                        rgb_images.append(rgb_bgr)
+                        
+                        cv2.imwrite(f"{sample_save_dir}/View_{abs_angle:.0f}.png", rgb_bgr)
+                        print(f"Captured view at absolute angle: {abs_angle:.0f}°")
+                    
+                    panorama = np.hstack(rgb_images)
+                    cv2.imwrite(f"{sample_save_dir}/Panorama.png", panorama)
+
+        sim.close()
+        break
