@@ -43,6 +43,7 @@ from poni.constants import (
     d3_40_colors_rgb,
     gibson_palette,
 )
+from envs import init_sim
 from poni.fmm_planner import FMMPlanner
 from einops import asnumpy, repeat
 from matplotlib import font_manager
@@ -268,7 +269,7 @@ def pixel_to_world(pixel, resolution, world_shift, floor_y):
     x, y = pixel
     world_x = x * resolution + world_shift[0]
     world_z = y * resolution + world_shift[2]
-    return (world_x, floor_y, world_z)
+    return (world_x, floor_y+0.88, world_z)
 
 def get_navigable_area_boundaries(sem_map, resolution, world_shift, floor_y, floor_label=FLOOR_ID):
     """
@@ -283,55 +284,7 @@ def get_navigable_area_boundaries(sem_map, resolution, world_shift, floor_y, flo
     world_max = pixel_to_world((max_x, max_y), resolution, world_shift, floor_y)
     return world_min, world_max
 
-# --- simulation related funcs ---
-def get_habitat_config(
-        scene_name,
-        config_path="/home/marmot/Boyang/MEM-Nav/semexp/envs/habitat/configs/tasks/objectnav_gibson.yaml",
-        split = 'val',
-        image_width=1024,
-        image_height=1024,
-        camera_hfov=79
-    ):
-    # ✅ Load Habitat config
-    config = habitat.get_config(config_path)
-    config.defrost()
-    config.DATASET.SPLIT = split
-    
-    # ✅ Use Scene Dataset Config
-    config.SIMULATOR.SCENE_DATASET_CONFIG = SCENE_CONFIG
-    # ✅ Explicitly set the scene file (fixes missing stage_config.json issue)
-    scene_glb_file = os.path.join(SCENE_DIR, f"{scene_name}.glb")
-    if not os.path.exists(scene_glb_file):
-        raise FileNotFoundError(f"❌ Scene file not found: {scene_glb_file}")
-
-    config.SIMULATOR.SCENE = scene_glb_file  
-
-    # ✅ Set camera properties for better image quality
-    config.SIMULATOR.RGB_SENSOR.WIDTH = image_width
-    config.SIMULATOR.RGB_SENSOR.HEIGHT = image_height
-    config.SIMULATOR.RGB_SENSOR.HFOV = camera_hfov
-    config.SIMULATOR.RGB_SENSOR.NOISE_MODEL = "None"
-
-    config.SIMULATOR.DEPTH_SENSOR.WIDTH = image_width
-    config.SIMULATOR.DEPTH_SENSOR.HEIGHT = image_height
-    config.SIMULATOR.DEPTH_SENSOR.HFOV = camera_hfov
-    config.SIMULATOR.DEPTH_SENSOR.MIN_DEPTH = 0.5
-    config.SIMULATOR.DEPTH_SENSOR.MAX_DEPTH = 5.0
-
-    config.SIMULATOR.SEMANTIC_SENSOR.WIDTH = image_width
-    config.SIMULATOR.SEMANTIC_SENSOR.HEIGHT = image_height
-    config.SIMULATOR.SEMANTIC_SENSOR.HFOV = camera_hfov
-
-    config.SIMULATOR.HABITAT_SIM_V0.GPU_DEVICE_ID = 0  # Use GPU rendering
-    config.SIMULATOR.HABITAT_SIM_V0.ALLOW_SLIDING = True
-    config.SIMULATOR.HABITAT_SIM_V0.ENABLE_PHYSICS = True
-    config.SIMULATOR.HABITAT_SIM_V0.LEAVE_CONTEXT_WITH_BACKGROUND_RENDERER = False
-
-    config.SIMULATOR.AGENT_0.SENSORS = ["RGB_SENSOR", "DEPTH_SENSOR", "SEMANTIC_SENSOR"]
-    config.freeze()
-    return config
-
-random.seed(42)
+random.seed(48)
 
 if __name__ == "__main__":
     grid_size = 0.05 # m
@@ -360,8 +313,8 @@ if __name__ == "__main__":
         scene_navmesh_path =  os.path.join(SCENE_DIR, f'{scene_name}.navmesh')
 
         # Load Habitat config
-        config = get_habitat_config(scene_name=scene_name)
-        sim = habitat.sims.make_sim("Sim-v0", config=config.SIMULATOR)
+        sim, action_names, sim_settings = init_sim(scene_glb_path)
+
         if os.path.exists(scene_navmesh_path):
             sim.pathfinder.load_nav_mesh(scene_navmesh_path)
             print(f"Using NavMesh: {scene_navmesh_path}")
@@ -404,7 +357,7 @@ if __name__ == "__main__":
 
                  # Optionally, convert a sampled pixel to world coordinate:
                 
-                for _ in range(5): # get 100 points
+                for _ in range(3): # get 100 points
                     sampled_pixel = random.choice(nav_coords_px)
                     
                     # Sample a heading from multiples of 30 degrees.
@@ -439,14 +392,20 @@ if __name__ == "__main__":
                     # --- Capture surrounding images from that position ---
                     rgb_images = []
                     for rel_angle in [0, 90, 180, 270]:
-                        # Compute the absolute angle (map & simulation) for this view.
-                        abs_angle = (sampled_angle + rel_angle) % 360
-                        habitat_angle = -(abs_angle+90)%360
-                        agent_state = agent.get_state()
+                        if rel_angle != 0:
+                            for _ in range(3):
+                                action = "turn_left"
+                                print("action", action)
+                                sim.step(action)
 
-                        rotation = common_utils.quat_from_angle_axis(np.deg2rad(habitat_angle), np.array([0, 1, 0]))
-                        agent_state.rotation = rotation
-                        agent.set_state(agent_state)
+                        # # Compute the absolute angle (map & simulation) for this view.
+                        abs_angle = (sampled_angle + rel_angle) % 360
+                        # habitat_angle = -(abs_angle+90)%360
+                        # agent_state = agent.get_state()
+
+                        # rotation = common_utils.quat_from_angle_axis(np.deg2rad(habitat_angle), np.array([0, 1, 0]))
+                        # agent_state.rotation = rotation
+                        # agent.set_state(agent_state)
                         
                         obs = sim.get_sensor_observations()
                         rgb_img = obs["rgb"]
