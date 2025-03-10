@@ -1,32 +1,23 @@
-# PONI
-
-This repository contains a Pytorch implementation of our CVPR 2022 paper:
-
-[PONI: Potential Functions for ObjectGoal Navigation with Interaction-free Learning](https://arxiv.org/pdf/2201.10029.pdf)<br/>
-Santhosh Kumar Ramakrishnan, Devendra Singh Chaplot, Ziad Al-Halah, Jitendra Malik, Kristen Grauman<br/>
-Meta AI, UT Austin, UC Berkeley 
-
-Project website: [https://vision.cs.utexas.edu/projects/poni/](https://vision.cs.utexas.edu/projects/poni/)
-
-![demo](./docs/poni_cvpr_2022.gif)
-
-## Abstract
-State-of-the-art approaches to ObjectGoal navigation rely on reinforcement learning and typically require significant computational resources and time for learning. We propose Potential functions for ObjectGoal Navigation with Interaction-free learning (PONI), a modular approach that disentangles the skills of 'where to look?' for an object and 'how to navigate to (x, y)?'. Our key insight is that 'where to look?' can be treated purely as a perception problem, and learned without environment interactions. To address this, we propose a network that predicts two complementary potential functions conditioned on a semantic map and uses them to decide where to look for an unseen object. We train the potential function network using supervised learning on a passive dataset of top-down semantic maps, and integrate it into a modular framework to perform ObjectGoal navigation. Experiments on Gibson and Matterport3D demonstrate that our method achieves the state-of-the-art for ObjectGoal navigation while incurring up to 1,600x less computational cost for training.
-
-<p align="center">
-  <img src="docs/poni_intro.jpg">
-</p>
-
-
-
-
+# MEM-NAV
 ## Installation
-
-Clone the current repo and required submodules:
+conda preparation for python
 ```
-git clone https://github.com/srama2512/PONI.git
-cd PONI
+conda_env_name=mem-nav
+conda create -n $conda_env_name python=3.9.16 cmake=3.14.0 -y
+conda activate $conda_env_name
+```
+torch install
+```
+conda install pytorch==1.12 torchvision torchaudio pytorch-cuda=11.7 -c pytorch -c nvidia
 
+conda install -c conda-forge imageio-ffmpeg
+
+pip install salesforce-lavis==1.0.2 transformers==4.26.0 numpy==1.26.4 imageio-ffmpeg pillow==10.4.0
+pip install tqdm wandb tensorboard
+```
+
+habitat dependencies:
+```
 cd dependencies
 git clone https://github.com/srama2512/astar_pycpp.git
 git clone https://github.com/facebookresearch/habitat-lab.git

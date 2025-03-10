@@ -129,5 +129,5 @@ data
 experiments
 pretrained_models
 visualizations
-trial_code
 tmp
+wandb
