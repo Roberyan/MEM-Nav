@@ -1,73 +1,51 @@
 # MEM-NAV
+
 ## Installation
+
 conda preparation for python
-```
+```bash
 conda_env_name=mem-nav
 conda create -n $conda_env_name python=3.9.16 cmake=3.14.0 -y
 conda activate $conda_env_name
 ```
-torch install
-```
-conda install pytorch==1.12 torchvision torchaudio pytorch-cuda=11.7 -c pytorch -c nvidia
 
-conda install -c conda-forge imageio-ffmpeg
-
+blip2 and torch installation
+``` bash
 pip install salesforce-lavis==1.0.2 transformers==4.26.0 numpy==1.26.4 imageio-ffmpeg pillow==10.4.0
-pip install tqdm wandb tensorboard
+
+pip install torch==1.12.0+cu102 torchvision -f https://download.pytorch.org/whl/torch_stable.html
+# conda install pytorch==1.12 torchvision pytorch-cuda=11.7 -c pytorch -c nvidia
 ```
 
-habitat dependencies:
+habitat install
+``` bash
+# conda install -c conda-forge imageio-ffmpeg
+
+cd dependencies
+git clone --branch v0.2.1 https://github.com/facebookresearch/habitat-sim.git
+cd habitat-sim 
+pip install -r requirements.txt    
+python setup.py install --build-datatool --with-cuda # if not successfully built, use `./build.sh --with-cuda` instead
+
+cd ..
+git clone --branch v0.2.1 https://github.com/facebookresearch/habitat-lab.git
+cd habitat-lab
+pip install -e .
 ```
+
+other package install
+``` bash
+pip install -r requirements.txt
+
+pip install torch-scatter==1.4.0 -f https://data.pyg.org/whl/torch-1.12.0+cu102.html
+
 cd dependencies
 git clone https://github.com/srama2512/astar_pycpp.git
-git clone https://github.com/facebookresearch/habitat-lab.git
-git clone https://github.com/facebookresearch/habitat-sim.git
-
 cd astar_pycpp
 git checkout 7b1e9ea
-
-cd ../habitat-lab
-git checkout bc85d09
-
-cd ../habitat-sim
-git checkout fc7fb11
-
-export PONI_ROOT=<PATH TO PONI/>
-```
- Create a conda environment:
-```
-conda create --name poni python=3.8.5
-conda activate poni
+make
 ```
 
-Install pytorch (assuming cuda 10.2):
-```
-conda install pytorch==1.9.1 torchvision==0.10.1 torchaudio==0.9.1 cudatoolkit=10.2 -c pytorch
-```
-
-Install dependencies:
-```
-cd $PONI_ROOT/dependencies/habitat-sim
-pip install -r requirements.txt
-python setup.py install --headless --with-cuda
-python setup.py build --build-datatool # tools to extract gibson semantic
-
-cd $PONI_ROOT/dependencies/habitat-lab
-pip install -r requirements.txt
-pip install -e .
-
-python -m pip install detectron2 -f https://dl.fbaipublicfiles.com/detectron2/wheels/cu102/torch1.9/index.html
-
-pip install torch-scatter==1.4.0 -f https://data.pyg.org/whl/torch-1.9.0+cu102.html
-
-cd $PONI_ROOT/dependencies/astar_pycpp && make
-```
-
-Install requirements for PONI:
-```
-cd $PONI_ROOT
-pip install -r requirements.txt
-```
 
 Add repository to python path:
 ```
