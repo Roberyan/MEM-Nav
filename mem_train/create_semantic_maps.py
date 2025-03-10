@@ -90,8 +90,8 @@ else:
 
 # Processing settings
 RESOLUTION = 0.05
-SAMPLING_DENSITY= 5000
-GRID_SIZE = 1
+SAMPLING_DENSITY= 10000
+GRID_SIZE = 0.5
 ##########################
 
 COLOR_PALETTE = [
@@ -355,7 +355,7 @@ def get_scene_boundaries(inputs):
     scene_name = scene_path.split("/")[-1].split(".")[0]
 
     def convert_lu_bound_to_smnet_bound(
-        lu_bound, buf=np.array([3.0, 0.0, 3.0])  # meters
+        lu_bound, buf=np.array([0.0, 0.0, 0.0])  # meters
     ):
         lower_bound = lu_bound[0] - buf
         upper_bound = lu_bound[1] + buf
@@ -445,7 +445,7 @@ def convert_point_cloud_to_semantic_map(
         # --  set discret dimensions
         center = np.array(houses_dim[env]["center"])
         sizes = np.array(houses_dim[env]["sizes"])
-        sizes += 2  # -- pad env bboxes
+        # sizes += 2  # -- pad env bboxes
 
         world_dim = sizes.copy()
         world_dim[1] = 0
@@ -644,7 +644,7 @@ def convert_point_cloud_to_semantic_map(
 
             rgb_save_path = os.path.join(save_dir, f"{env}_{floor_id}.png")
             cv2.imwrite(rgb_save_path, map_semantic_rgb_with_palette)
-            cv2.imwrite(os.path.join(save_dir, f"{env}_{floor_id}_no_palette.png"), map_semantic_rgb)
+            # cv2.imwrite(os.path.join(save_dir, f"{env}_{floor_id}_no_palette.png"), map_semantic_rgb)
 
         with h5py.File(map_save_path, "w") as f:
             f.create_dataset(f"wall_sem_id", data=OBJECT_CATEGORY_MAP["wall"])
@@ -688,13 +688,16 @@ if __name__ == "__main__":
         )
     )
 
-    # Select only scenes from the train and val splits
-    valid_scenes = (
-        SPLIT_SCENES[ACTIVE_DATASET]["train"] + SPLIT_SCENES[ACTIVE_DATASET]["val"]
-    )
-    scene_paths = list(
-        filter(lambda x: os.path.basename(x).split(".")[0] in valid_scenes, scene_paths)
-    )
+    only_gibson = True
+
+    if only_gibson:
+        # Select only scenes from the train and val splits
+        valid_scenes = (
+            SPLIT_SCENES[ACTIVE_DATASET]["train"] + SPLIT_SCENES[ACTIVE_DATASET]["val"]
+        )
+        scene_paths = list(
+            filter(lambda x: os.path.basename(x).split(".")[0] in valid_scenes, scene_paths)
+        )
 
     print(f"Number of available scenes: {len(scene_paths)}")
 
@@ -739,4 +742,4 @@ if __name__ == "__main__":
     # Extract semantic maps
     os.makedirs(SEM_SAVE_ROOT, exist_ok=True)
     print("===========> Extracting semantic maps")
-    convert_point_cloud_to_semantic_map(PC_SAVE_ROOT, SB_SAVE_ROOT, SEM_SAVE_ROOT)
+    convert_point_cloud_to_semantic_map(PC_SAVE_ROOT, SB_SAVE_ROOT, SEM_SAVE_ROOT, RESOLUTION)
