@@ -13,12 +13,7 @@ import random
 import numpy as np
 import os.path as osp
 import habitat_sim.utils.common as common_utils
-
-from poni.geometry import (
-    spatial_transform_map,
-    crop_map,
-    get_frontiers_np,
-)
+from scipy.ndimage import binary_erosion
 
 from constants import (
     FLOOR_ID,
@@ -73,11 +68,11 @@ def show_semmap_compare(sem_map, smooth_map):
     plt.show()
 
 
-random.seed(48)
+random.seed(1234)
 
 if __name__ == "__main__":
     only_gibson_nav = True
-    if_debugg = True
+    if_debugg = False
 
     dset = "gibson"
     nav_scenes = ['Allensville', 'Beechwood', 'Benevolence', 'Coffeen', 'Collierville', 'Cosmos', 'Darden', 'Forkland', 'Hanson', 'Hiteman', 'Klickitat', 'Lakeville', 'Leonardo', 'Lindenwood', 'Markleeville', 'Marstons', 'Merom', 'Mifflinburg', 'Newfields', 'Onaga', 'Pinesdale', 'Pomaria', 'Ranchester', 'Shelbyville', 'Stockman', 'Tolstoy', 'Wainscott', 'Wiconisco', 'Woodbine']
@@ -109,7 +104,7 @@ if __name__ == "__main__":
         scene_navmesh_path =  os.path.join(SCENE_DIR, f'{scene_name}.navmesh')
         scene_bounds =  json.load(open(os.path.join(SCENE_BOUNDS_DIR, f"{scene_name}.json")))
 
-        sample_ratio = 0.1 if scene_name in nav_scenes else 0.05
+        sample_ratio = 0.2 if scene_name in nav_scenes else 0.1
 
         map_world_shift = maps_info[scene_name]['map_world_shift']
         resolution = maps_info[scene_name]['resolution']
@@ -161,6 +156,10 @@ if __name__ == "__main__":
                 nav_map_by_sim = get_nav_map_from_sim(sim, resolution + d_reso, map_y, map_y_hi)
                 nav_map_by_sem = (map_semantic == FLOOR_ID)
                 nav_map_combine = np.logical_and(nav_map_by_sim, nav_map_by_sem)# np.any(np.stack([nav_map_by_sim, nav_map_by_sem], axis=0), axis=0)
+                
+                # add erosion to make point further
+                nav_map_combine = binary_erosion(nav_map_combine, structure=np.ones([3]*2))
+                
                 y_coords, x_coords = np.where(nav_map_combine)
                 nav_coords_px = list(zip(x_coords, y_coords))
 
@@ -176,8 +175,9 @@ if __name__ == "__main__":
 
                 visited_map = np.zeros_like(map_semantic, dtype=bool)
 
+                used_points = [] 
                 for sampled_pos in tqdm(sampled_points, desc=f"Processing Sampled Positions in {name}"):
-                    if is_area_visited(visited_map, sampled_pos, local_map_range):
+                    if is_area_visited(visited_map, sampled_pos, local_map_range // 2):
                         continue  # Skip if already visited
 
                     # --- try get the corresponding position in habitat sim and extract image
@@ -192,12 +192,14 @@ if __name__ == "__main__":
                     
                     # extract local map:
                     local_map = extract_sem_map_patch(map_semantic, sampled_pos, window_size=local_map_range)
-                    if sample_ratio == 0.05:
-                        mark_visited_area(visited_map, sampled_pos, local_map_range // 4)
-                    else:
+                    if sample_ratio == 0.1:
                         mark_visited_area(visited_map, sampled_pos, local_map_range // 6)
+                    else:
+                        mark_visited_area(visited_map, sampled_pos, local_map_range // 8)
                     if set(np.unique(local_map)).issubset({0, 1, 2}):
                         continue
+                    
+                    used_points.append(sampled_pos)
 
                     # Sample a heading from multiples of 30 degrees.
                     sampled_angle = random.choice(range(0, 360, 30))
@@ -260,8 +262,10 @@ if __name__ == "__main__":
                     with h5py.File(f"{sample_save_dir}/local_data.h5", "w") as f:
                         f.create_dataset("local_map", data=local_map) 
                         f.create_dataset(f"rgb_views", data=rgb_images, compression="gzip") 
-                    
+                        f.create_dataset("map_world_shift", data=map_world_shift) 
+
                     if if_debugg:
                         panorama = np.hstack(rgb_images)
                         cv2.imwrite(f"{sample_save_dir}/Panorama.png", panorama)
+                display_map(nav_map_combine, used_points, os.path.join(tmp_scene_save_dir,"sampled_map.png"))
         sim.close()

@@ -1,5 +1,7 @@
 from PIL import Image
 import numpy as np
+import matplotlib
+matplotlib.use("Agg")  # Use non-interactive mode to prevent GUI issues
 from matplotlib import pyplot as plt
 from habitat.utils.visualizations import maps
 
@@ -43,16 +45,23 @@ def convert_points_to_topdown(pathfinder, points, meters_per_pixel):
     return points_topdown
 
 # display a topdown map with matplotlib
-def display_map(topdown_map, key_points=None):
+def display_map(topdown_map, key_points=None, save_path=None):
     plt.figure(figsize=(12, 8))
     ax = plt.subplot(1, 1, 1)
     ax.axis("off")
     plt.imshow(topdown_map)
-    # plot points on map
+    # Plot key points (ensure they are always on top)
     if key_points is not None:
         for point in key_points:
-            plt.plot(point[0], point[1], marker="o", markersize=3, alpha=0.8)
-    plt.show(block=False)
+            plt.plot(point[0], point[1], marker="o", markersize=3, alpha=0.8, color="red")  # Added color for visibility
+
+    # Save the map if needed
+    if save_path:
+        plt.savefig(save_path, bbox_inches="tight", dpi=300)
+        plt.close()  # Prevent display when saving
+        print(f"Map saved to: {save_path}")
+    else:
+        plt.show(block=False)  # Keep display behavior unchanged
 
 def get_map_hablab(sim, map_y, grid_size):
     hablab_topdown_map = maps.get_topdown_map(
