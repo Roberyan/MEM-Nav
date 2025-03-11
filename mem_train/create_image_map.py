@@ -50,6 +50,7 @@ from matplotlib import font_manager
 
 import imageio
 from sim_utils import display_map, get_map_hablab
+from scipy.ndimage import zoom
 
 # --- Paths and settings ---
 SCENE_DIR = "data/scene_datasets/gibson_semantic"
@@ -287,22 +288,6 @@ def world_to_pixel(world_pos, resolution, world_shift):
 # --- smoothing the sem map ---
 from scipy import stats, ndimage
 import matplotlib.pyplot as plt
-# Define your mode filter, excluding class 0
-def mode_filter(values):
-    nonzero = values[values != 0]
-    if len(nonzero) == 0:
-        return 0
-    mode_val, _ = stats.mode(nonzero, axis=None, keepdims=True, nan_policy='omit')
-    return mode_val[0]
-
-def get_smoothed_map(sem_map, ker_size=2):
-    return ndimage.generic_filter(
-        sem_map, 
-        function=mode_filter, 
-        size=ker_size,
-        mode='constant', 
-        cval=0
-    )
 
 def show_semmap_compare(sem_map, smooth_map):
     fig, axes = plt.subplots(1, 2, figsize=(12, 6))
@@ -332,15 +317,13 @@ def get_nav_map_from_sim(sim, sample_resolution, y_min, y_max, n_height=5):
 # get local map
 def extract_sem_map_patch(map_semantic, map_pos, window_size=5, pad_value=0):
     x, y = map_pos
-    H, W = map_semantic.shape
     half_window = window_size // 2
 
     # Pad the map to prevent out-of-bounds errors
     padded_map = np.pad(map_semantic, pad_width=half_window, mode='constant', constant_values=pad_value)
     # Shift coordinates due to padding
     x_padded, y_padded = x + half_window, y + half_window
-    return padded_map[y_padded - half_window : y_padded + half_window + 1,
-                        x_padded - half_window : x_padded + half_window + 1]
+    return padded_map[y_padded - half_window : y_padded + half_window + 1, x_padded - half_window : x_padded + half_window + 1]
 
 # benefit sampling
 def mark_visited_area(visited_map, sampled_pos, local_map_range):
@@ -394,23 +377,32 @@ def is_area_visited(visited_map, sampled_pos, local_map_range):
 random.seed(48)
 
 if __name__ == "__main__":
-    scene_paths = sorted(
-        glob.glob(
-            os.path.join(SEM_MAP_SAVE_ROOT, "*.h5"),
-            recursive=True,
-        )
-    )
-    available_scenes = [x.split("/")[-1].split('.')[0] for x in scene_paths]
-    
-    nav_scenes = ['Allensville', 'Beechwood', 'Benevolence', 'Coffeen', 'Collierville', 'Cosmos', 'Darden', 'Forkland', 'Hanson', 'Hiteman', 'Klickitat', 'Lakeville', 'Leonardo', 'Lindenwood', 'Markleeville', 'Marstons', 'Merom', 'Mifflinburg', 'Newfields', 'Onaga', 'Pinesdale', 'Pomaria', 'Ranchester', 'Shelbyville', 'Stockman', 'Tolstoy', 'Wainscott', 'Wiconisco', 'Woodbine']
-    maps_info = json.load(open(osp.join(SEM_MAP_SAVE_ROOT, 'semmap_GT_info.json')))
+    only_gibson_nav = True
+    if_debugg = False
 
     dset = "gibson"
+    nav_scenes = ['Allensville', 'Beechwood', 'Benevolence', 'Coffeen', 'Collierville', 'Cosmos', 'Darden', 'Forkland', 'Hanson', 'Hiteman', 'Klickitat', 'Lakeville', 'Leonardo', 'Lindenwood', 'Markleeville', 'Marstons', 'Merom', 'Mifflinburg', 'Newfields', 'Onaga', 'Pinesdale', 'Pomaria', 'Ranchester', 'Shelbyville', 'Stockman', 'Tolstoy', 'Wainscott', 'Wiconisco', 'Woodbine']
+    maps_info = json.load(open(osp.join(SEM_MAP_SAVE_ROOT, 'semmap_GT_info.json')))
+    
+    if not only_gibson_nav:
+        scene_paths = sorted(
+            glob.glob(
+                os.path.join(SEM_MAP_SAVE_ROOT, "*.h5"),
+                recursive=True,
+            )
+        )
+        available_scenes = [x.split("/")[-1].split('.')[0] for x in scene_paths]
+    else:
+        available_scenes = nav_scenes
+    
+    local_map_range = 64
 
-    TMP_SAVE_DIR = SAVE_DIR #"tmp/map_image"
-    # os.makedirs(TMP_SAVE_DIR, exist_ok=True)
-
-    # random.shuffle(available_scenes)
+    if if_debugg:
+        TMP_SAVE_DIR = "tmp/map_image"
+        os.makedirs(TMP_SAVE_DIR, exist_ok=True)
+        random.shuffle(available_scenes)
+    else:
+        TMP_SAVE_DIR = SAVE_DIR
 
     for scene_name in tqdm(available_scenes, desc="Processing Scenes", unit="scene"):
         scene_sem_map_path =  os.path.join(SEM_MAP_SAVE_ROOT, f"{scene_name}.h5")
@@ -422,13 +414,6 @@ if __name__ == "__main__":
 
         map_world_shift = maps_info[scene_name]['map_world_shift']
         resolution = maps_info[scene_name]['resolution']
-
-        # t = scene_bounds[scene_name]['sizes'].copy()
-        # t.pop(1)
-        # local_map_range = int(
-        #     (min(5, min(t)//2)//2)/resolution
-        # )
-        local_map_range = 64
 
         # Load Habitat config
         sim, action_names, sim_settings = init_sim(scene_glb_path)
@@ -451,9 +436,7 @@ if __name__ == "__main__":
                 nuniq = len(np.unique(map_semantic))
                 if nuniq < MIN_OBJECTS_THRESH + 3: # too less objects in the scene, skip
                     continue
-                # smoothing try
-                # map_smoothed = get_smoothed_map(map_semantic)
-                # show_semmap_compare(map_semantic, map_smoothed)
+
 
                 tmp_scene_save_dir = os.path.join(TMP_SAVE_DIR, name)
                 os.makedirs(tmp_scene_save_dir, exist_ok=True)
@@ -553,6 +536,9 @@ if __name__ == "__main__":
                                 action = "turn_right"
                                 # print("action", action)
                                 sim.step(action)
+                        
+                        # allow some time for rendering
+                        sim.step("stop")
 
                         # Compute the absolute angle (map & simulation) for this view.
                         abs_angle = (sampled_angle + rel_angle) % 360
@@ -577,5 +563,4 @@ if __name__ == "__main__":
                         f.create_dataset(f"rgb_views", data=rgb_images, compression="gzip") 
                     # panorama = np.hstack(rgb_images)
                     # cv2.imwrite(f"{sample_save_dir}/Panorama.png", panorama)
-
         sim.close()
