@@ -342,6 +342,55 @@ def extract_sem_map_patch(map_semantic, map_pos, window_size=5, pad_value=0):
     return padded_map[y_padded - half_window : y_padded + half_window + 1,
                         x_padded - half_window : x_padded + half_window + 1]
 
+# benefit sampling
+def mark_visited_area(visited_map, sampled_pos, local_map_range):
+    """
+    Marks a local area around a sampled position as visited.
+
+    Parameters:
+        visited_map (np.array): A boolean mask tracking sampled areas.
+        sampled_pos (tuple): The (x, y) pixel position being sampled.
+        local_map_range (int): The size of the local area to mark.
+
+    Returns:
+        None (modifies `visited_map` in place)
+    """
+    H, W = visited_map.shape
+    half_range = local_map_range // 2
+
+    # Compute bounds for the local area (ensure they stay within image bounds)
+    x_min = max(0, sampled_pos[0] - half_range)
+    x_max = min(W, sampled_pos[0] + half_range + 1)
+    y_min = max(0, sampled_pos[1] - half_range)
+    y_max = min(H, sampled_pos[1] + half_range + 1)
+
+    # Mark the region as visited
+    visited_map[y_min:y_max, x_min:x_max] = True
+
+def is_area_visited(visited_map, sampled_pos, local_map_range):
+    """
+    Checks if a sampled area has already been visited.
+
+    Parameters:
+        visited_map (np.array): A boolean mask tracking sampled areas.
+        sampled_pos (tuple): The (x, y) pixel position to check.
+        local_map_range (int): The size of the local area to check.
+
+    Returns:
+        bool: True if the area has been sampled before, False otherwise.
+    """
+    H, W = visited_map.shape
+    half_range = local_map_range // 2
+
+    # Compute bounds for the local area
+    x_min = max(0, sampled_pos[0] - half_range)
+    x_max = min(W, sampled_pos[0] + half_range + 1)
+    y_min = max(0, sampled_pos[1] - half_range)
+    y_max = min(H, sampled_pos[1] + half_range + 1)
+
+    # Check if any pixel in the region is already visited
+    return np.any(visited_map[y_min:y_max, x_min:x_max])
+
 random.seed(48)
 
 if __name__ == "__main__":
@@ -369,7 +418,7 @@ if __name__ == "__main__":
         scene_navmesh_path =  os.path.join(SCENE_DIR, f'{scene_name}.navmesh')
         scene_bounds =  json.load(open(os.path.join(SCENE_BOUNDS_DIR, f"{scene_name}.json")))
 
-        sample_ratio = 0.015 if scene_name in nav_scenes else 0.01
+        sample_ratio = 0.1 if scene_name in nav_scenes else 0.05
 
         map_world_shift = maps_info[scene_name]['map_world_shift']
         resolution = maps_info[scene_name]['resolution']
@@ -443,7 +492,12 @@ if __name__ == "__main__":
                 sampled_points = random.sample(nav_coords_px, n_samples)
                 # display_map(nav_map_combine, sampled_points)
 
+                visited_map = np.zeros_like(map_semantic, dtype=bool)
+
                 for sampled_pos in tqdm(sampled_points, desc=f"Processing Sampled Positions in {name}"):
+                    if is_area_visited(visited_map, sampled_pos, local_map_range):
+                        continue  # Skip if already visited
+
                     # --- try get the corresponding position in habitat sim and extract image
                     sampled_world_coord = pixel_to_world(sampled_pos, resolution, np.array(map_world_shift), map_y)
                     if not sim.pathfinder.is_navigable(sampled_world_coord):
@@ -456,6 +510,10 @@ if __name__ == "__main__":
                     
                     # extract local map:
                     local_map = extract_sem_map_patch(map_semantic, sampled_pos, window_size=local_map_range)
+                    if sample_ratio == 0.05:
+                        mark_visited_area(visited_map, sampled_pos, local_map_range // 4)
+                    else:
+                        mark_visited_area(visited_map, sampled_pos, local_map_range // 6)
                     if set(np.unique(local_map)).issubset({0, 1, 2}):
                         continue
 
@@ -493,7 +551,7 @@ if __name__ == "__main__":
                         if rel_angle != 0:
                             for _ in range(3):
                                 action = "turn_right"
-                                print("action", action)
+                                # print("action", action)
                                 sim.step(action)
 
                         # Compute the absolute angle (map & simulation) for this view.
