@@ -56,7 +56,7 @@ SCENE_DIR = "data/scene_datasets/gibson_semantic"
 SCENE_CONFIG = os.path.join(SCENE_DIR, "gibson_semantic.scene_dataset_config.json")
 SEM_MAP_SAVE_ROOT = "data/semantic_maps/gibson/semantic_maps" 
 SCENE_BOUNDS_DIR = "data/semantic_maps/gibson/scene_boundaries"
-SAVE_DIR = "data/semantic_maps/gibson/surrounding_images"
+SAVE_DIR = "data/semantic_maps/gibson/image_map_pairs"
 os.makedirs(SAVE_DIR, exist_ok=True)
 
 # --- From PONI --- 
@@ -479,7 +479,6 @@ if __name__ == "__main__":
                     local_topdown_map = visualize_sem_map(local_map, selected_point=[local_map_range//2]*2, selected_angle=sampled_angle, with_info=False, with_palette=False)
                     cv2.imwrite(f"{sample_save_dir}/global_topdown_map.png", global_topdown_map)
                     cv2.imwrite(f"{sample_save_dir}/local_topdown_map.png", local_topdown_map)
-                    np.save(f"{sample_save_dir}/local_map.npy", local_map)
 
                     agent_state = agent.get_state()
  
@@ -494,8 +493,8 @@ if __name__ == "__main__":
                     agent.set_state(agent_state)
                     print("Agent placed at:", agent.get_state().position)
                     print("Agent rotation (quaternion):", agent.get_state().rotation)
-
-                    # --- Capture surrounding images from that position ---
+                    
+                    # --- Capture surrounding images from that position --- 
                     rgb_images = []
                     for rel_angle in [0, 90, 180, 270]:
 
@@ -523,6 +522,10 @@ if __name__ == "__main__":
                         
                         cv2.imwrite(f"{sample_save_dir}/View_{abs_angle:.0f}.png", rgb_bgr)
                         print(f"Captured view at absolute angle: {abs_angle:.0f}°")      
+                    
+                    with h5py.File(f"{sample_save_dir}/local_data.h5", "w") as f:
+                        f.create_dataset("local_map", data=local_map) 
+                        f.create_dataset(f"rgb_views", data=rgb_images, compression="gzip") 
                     # panorama = np.hstack(rgb_images)
                     # cv2.imwrite(f"{sample_save_dir}/Panorama.png", panorama)
 
