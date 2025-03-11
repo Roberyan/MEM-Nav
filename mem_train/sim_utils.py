@@ -51,7 +51,7 @@ def display_map(topdown_map, key_points=None):
     # plot points on map
     if key_points is not None:
         for point in key_points:
-            plt.plot(point[0], point[1], marker="o", markersize=10, alpha=0.8)
+            plt.plot(point[0], point[1], marker="o", markersize=3, alpha=0.8)
     plt.show(block=False)
 
 def get_map_hablab(sim, map_y, grid_size):
