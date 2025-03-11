@@ -4,7 +4,7 @@ import torch
 from torch.utils.data import Dataset
 import numpy as np
 
-from topdown_map_utils import convert_maps_to_oh
+from topdown_map_utils import convert_maps_to_oh, generate_map_view_mask
 
 import re
 from constants import GIBSON_CATEGORIES
@@ -45,6 +45,13 @@ class MEM_build_Dataset(Dataset):
         semmap_oh = convert_maps_to_oh(sem_map)
         return (semmap_oh.sum(axis=(1, 2)) > 0).astype(np.int8)
 
+    def get_map_view_mask(self, local_map, init_dir):
+        view_dir_mask = []
+        for d_angle in [0, 90, 180, 270]:
+            dir = (init_dir + d_angle)%360
+            view_dir_mask.append(generate_map_view_mask(local_map, dir))
+        return view_dir_mask
+
     def __getitem__(self, idx):
         h5_path = self.h5_files[idx]
         map_loc, map_dir = self.get_sample_loc_dir(h5_path)
@@ -60,6 +67,7 @@ class MEM_build_Dataset(Dataset):
                 blip2_embeds = None 
 
         local_map_oh = self.get_one_hot(local_map)
+        views_mask = self.get_map_view_mask(local_map, map_dir)
         local_map = torch.from_numpy(local_map).unsqueeze(0).long()
         
         # Process rgb_views: assume shape is (num_views, H, W, C).

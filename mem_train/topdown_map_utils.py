@@ -12,6 +12,47 @@ from constants import (
     CAT_OFFSET,
 )
 
+# get map view of each surrounding image with correct angle
+def generate_map_view_mask(local_map, sampled_angle, fov=90):
+    """
+    Generates a visibility mask aligned with the agent’s actual orientation.
+
+    Parameters:
+        local_map (np.array): The local semantic map (centered around the agent).
+        sampled_angle (int): The agent's heading in degrees (0° = East, 90° = South).
+        fov (int): The field of view (default: 90°).
+
+    Returns:
+        np.array: A binary mask indicating the correctly aligned visible region.
+    """
+    H, W = local_map.shape
+    cx, cy = W // 2, H // 2  # The agent is always at the center
+
+    # Create an empty mask
+    mask = np.zeros_like(local_map, dtype=np.uint8)
+
+    # Iterate through all pixels in the local map
+    for y in range(H):
+        for x in range(W):
+            dx, dy = x - cx, y - cy  # Relative position to agent
+
+            # 🔹 Flip y-axis to match the correct coordinate system
+            angle = (np.arctan2(dy, dx) * 180 / np.pi) % 360  # Fix direction
+
+            # Define the view range based on sampled_angle
+            start_angle = (sampled_angle - fov / 2) % 360
+            end_angle = (sampled_angle + fov / 2) % 360
+
+            # Correctly determine whether a pixel is in the FOV
+            if start_angle < end_angle:
+                if start_angle <= angle <= end_angle:
+                    mask[y, x] = 1
+            else:  # Handle wraparound cases (e.g., 330° - 30° FOV)
+                if angle >= start_angle or angle <= end_angle:
+                    mask[y, x] = 1
+
+    return mask
+
 # map to one hot map
 def convert_maps_to_oh(semmap, dset="gibson"): # convert sem map to one hot, skip out-of-bound
     ncat = NUM_OBJECT_CATEGORIES[dset]
