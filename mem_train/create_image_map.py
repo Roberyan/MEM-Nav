@@ -345,32 +345,23 @@ def extract_sem_map_patch(map_semantic, map_pos, window_size=5, pad_value=0):
 random.seed(48)
 
 if __name__ == "__main__":
-    grid_size = 0.05 # m
-    object_boundary = 1.0 # m
-
     scene_paths = sorted(
         glob.glob(
             os.path.join(SEM_MAP_SAVE_ROOT, "*.h5"),
             recursive=True,
         )
     )
-    available_scenes = [x.split("/")[-1].split('.')[0] for x in scene_paths ]
+    available_scenes = [x.split("/")[-1].split('.')[0] for x in scene_paths]
     
     nav_scenes = ['Allensville', 'Beechwood', 'Benevolence', 'Coffeen', 'Collierville', 'Cosmos', 'Darden', 'Forkland', 'Hanson', 'Hiteman', 'Klickitat', 'Lakeville', 'Leonardo', 'Lindenwood', 'Markleeville', 'Marstons', 'Merom', 'Mifflinburg', 'Newfields', 'Onaga', 'Pinesdale', 'Pomaria', 'Ranchester', 'Shelbyville', 'Stockman', 'Tolstoy', 'Wainscott', 'Wiconisco', 'Woodbine']
     maps_info = json.load(open(osp.join(SEM_MAP_SAVE_ROOT, 'semmap_GT_info.json')))
 
     dset = "gibson"
 
-    maps = {}
-    names = []
-    maps_xyz_info = {}
+    TMP_SAVE_DIR = SAVE_DIR #"tmp/map_image"
+    # os.makedirs(TMP_SAVE_DIR, exist_ok=True)
 
-    visibility_size = 3.0
-
-    TMP_SAVE_DIR = "tmp/map_image"
-    os.makedirs(TMP_SAVE_DIR, exist_ok=True)
-
-    random.shuffle(available_scenes)
+    # random.shuffle(available_scenes)
 
     for scene_name in tqdm(available_scenes, desc="Processing Scenes", unit="scene"):
         scene_sem_map_path =  os.path.join(SEM_MAP_SAVE_ROOT, f"{scene_name}.h5")
@@ -501,7 +492,7 @@ if __name__ == "__main__":
                         # action way to change angle
                         if rel_angle != 0:
                             for _ in range(3):
-                                action = "turn_left"
+                                action = "turn_right"
                                 print("action", action)
                                 sim.step(action)
 
