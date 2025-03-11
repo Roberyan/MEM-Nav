@@ -14,7 +14,7 @@ import cv2
 import bz2
 import math
 import json
-import tqdm
+from tqdm import tqdm
 import h5py
 import glob
 import torch
@@ -48,11 +48,16 @@ from poni.fmm_planner import FMMPlanner
 from einops import asnumpy, repeat
 from matplotlib import font_manager
 
+import imageio
+from sim_utils import display_map, get_map_hablab
+from scipy.ndimage import zoom
+
 # --- Paths and settings ---
 SCENE_DIR = "data/scene_datasets/gibson_semantic"
 SCENE_CONFIG = os.path.join(SCENE_DIR, "gibson_semantic.scene_dataset_config.json")
 SEM_MAP_SAVE_ROOT = "data/semantic_maps/gibson/semantic_maps" 
-SAVE_DIR = "data/semantic_maps/gibson/surrounding_images"
+SCENE_BOUNDS_DIR = "data/semantic_maps/gibson/scene_boundaries"
+SAVE_DIR = "data/semantic_maps/gibson/image_map_pairs"
 os.makedirs(SAVE_DIR, exist_ok=True)
 
 # --- From PONI --- 
@@ -138,7 +143,7 @@ def get_palette_image():
 
     return np.array(image)
 
-def visualize_sem_map(sem_map, selected_point=None, selected_angle=None, with_palette=True):
+def visualize_sem_map(sem_map, selected_point=None, selected_angle=None, with_info=True, with_palette=True):
     """
     Visualize the semantic map using the Gibson color palette and overlay:
       - A coordinate legend in the top-left corner (drawn in red) indicating +X (arrow right) and +Z (arrow downward),
@@ -167,47 +172,49 @@ def visualize_sem_map(sem_map, selected_point=None, selected_angle=None, with_pa
     
     # Create a drawing context on the PIL image.
     draw = ImageDraw.Draw(semantic_pil)
+
     
-    # Load a bold sans-serif font at size 14.
-    font_path = font_manager.findfont(font_manager.FontProperties(family="sans-serif", weight="bold"))
-    custom_font = ImageFont.truetype(font_path, 14)
-    
-    # --- Draw title text (top-center) ---
-    if selected_point is not None and selected_angle is not None:
-        title_text = f"Location: ({selected_point[0]}, {selected_point[1]}), Direction: {selected_angle}°"
-        w, h = semantic_pil.size
-        # Use textbbox to get the bounding box of the text.
-        bbox = draw.textbbox((0, 0), title_text, font=custom_font)
-        text_width = bbox[2] - bbox[0]
-        title_x = (w - text_width) // 2  # center horizontally
-        title_y = 5  # top margin
-        draw.text((title_x, title_y), title_text, font=custom_font, fill=(0, 0, 0))
-    
-    # --- Draw coordinate legend (top-left), shifted down to avoid title overlap ---
-    legend_origin = (20, 40)  # shifted down from the top edge
-    arrow_length = 40  # in pixels
-    arrow_head_length = 8
-    arrow_head_width = 4
-    # Draw +X arrow (red)
-    x_arrow_end = (legend_origin[0] + arrow_length, legend_origin[1])
-    draw.line([legend_origin, x_arrow_end], fill=(0, 0, 255), width=1)
-    x_tip = x_arrow_end
-    x_base_left = (x_arrow_end[0] - arrow_head_length, x_arrow_end[1] - arrow_head_width)
-    x_base_right = (x_arrow_end[0] - arrow_head_length, x_arrow_end[1] + arrow_head_width)
-    draw.polygon([x_tip, x_base_left, x_base_right], fill=(0, 0, 255))
-    draw.text((x_arrow_end[0] + 5, x_arrow_end[1] - 5), "X", font=custom_font, fill=(0, 0, 255))
-    # Draw +Z arrow (red)
-    z_arrow_end = (legend_origin[0], legend_origin[1] + arrow_length)
-    draw.line([legend_origin, z_arrow_end], fill=(0, 0, 255), width=1)
-    z_tip = z_arrow_end
-    z_base_left = (z_arrow_end[0] - arrow_head_width, z_arrow_end[1] - arrow_head_length)
-    z_base_right = (z_arrow_end[0] + arrow_head_width, z_arrow_end[1] - arrow_head_length)
-    draw.polygon([z_tip, z_base_left, z_base_right], fill=(0, 0, 255))
-    draw.text((z_arrow_end[0] + 5, z_arrow_end[1] - 10), "Z", font=custom_font, fill=(0, 0, 255))
+    if with_info:
+        # --- Draw title text (top-center) ---
+        # Load a bold sans-serif font at size 10.
+        font_path = font_manager.findfont(font_manager.FontProperties(family="sans-serif", weight="bold"))
+        custom_font = ImageFont.truetype(font_path, 10)
+
+        if selected_point is not None and selected_angle is not None:
+            title_text = f"Location: ({selected_point[0]}, {selected_point[1]}), Direction: {selected_angle}°"
+            w, h = semantic_pil.size
+            # Use textbbox to get the bounding box of the text.
+            bbox = draw.textbbox((0, 0), title_text, font=custom_font)
+            text_width = bbox[2] - bbox[0]
+            title_x = (w - text_width) // 2  # center horizontally
+            title_y = 5  # top margin
+            draw.text((title_x, title_y), title_text, font=custom_font, fill=(0, 0, 0))
+        
+        # --- Draw coordinate legend (top-left), shifted down to avoid title overlap ---
+        legend_origin = (20, 40)  # shifted down from the top edge
+        arrow_length = 20  # in pixels
+        arrow_head_length = 8
+        arrow_head_width = 4
+        # Draw +X arrow (red)
+        x_arrow_end = (legend_origin[0] + arrow_length, legend_origin[1])
+        draw.line([legend_origin, x_arrow_end], fill=(0, 0, 255), width=1)
+        x_tip = x_arrow_end
+        x_base_left = (x_arrow_end[0] - arrow_head_length, x_arrow_end[1] - arrow_head_width)
+        x_base_right = (x_arrow_end[0] - arrow_head_length, x_arrow_end[1] + arrow_head_width)
+        draw.polygon([x_tip, x_base_left, x_base_right], fill=(0, 0, 255))
+        draw.text((x_arrow_end[0] + 5, x_arrow_end[1] - 5), "X", font=custom_font, fill=(0, 0, 255))
+        # Draw +Z arrow (red)
+        z_arrow_end = (legend_origin[0], legend_origin[1] + arrow_length)
+        draw.line([legend_origin, z_arrow_end], fill=(0, 0, 255), width=1)
+        z_tip = z_arrow_end
+        z_base_left = (z_arrow_end[0] - arrow_head_width, z_arrow_end[1] - arrow_head_length)
+        z_base_right = (z_arrow_end[0] + arrow_head_width, z_arrow_end[1] - arrow_head_length)
+        draw.polygon([z_tip, z_base_left, z_base_right], fill=(0, 0, 255))
+        draw.text((z_arrow_end[0] + 5, z_arrow_end[1] - 10), "Z", font=custom_font, fill=(0, 0, 255))
     
     # --- Draw oriented triangle marker for the selected point ---
     if selected_point is not None and selected_angle is not None:
-        triangle_size = max(8, int(0.015 * sem_map.shape[0]))  
+        triangle_size = max(6, int(0.015 * sem_map.shape[0]))  
         
         # Adjusted shape for clearer direction indication (longer tip)
         # Scaled-down version (80% of original size)
@@ -252,15 +259,6 @@ def convert_maps_to_oh(semmap, dset="gibson"): # convert sem map to one hot, ski
         semmap_oh[i] = (semmap == i + CAT_OFFSET).astype(np.float32)
     return semmap_oh
 
-def get_navigable_area_coordinates(sem_map, floor_label=FLOOR_ID):
-    """
-    Given a semantic map (2D array) and a floor label, return a list of pixel coordinates
-    (x, y) where the map is navigable (i.e. floor).
-    """
-    y_coords, x_coords = np.where(sem_map == floor_label)
-    # Return coordinates as (x, y) tuples
-    return list(zip(x_coords, y_coords))
-
 def pixel_to_world(pixel, resolution, world_shift, floor_y):
     """
     Convert a pixel coordinate (x, y) from the map to a 3D world coordinate.
@@ -269,48 +267,153 @@ def pixel_to_world(pixel, resolution, world_shift, floor_y):
     x, y = pixel
     world_x = x * resolution + world_shift[0]
     world_z = y * resolution + world_shift[2]
-    return (world_x, floor_y+0.88, world_z)
+    return [world_x, floor_y+0.88, world_z]
 
-def get_navigable_area_boundaries(sem_map, resolution, world_shift, floor_y, floor_label=FLOOR_ID):
+def world_to_pixel(world_pos, resolution, world_shift):
     """
-    Compute the boundaries (minimum and maximum corners) of the navigable area in world coordinates.
+    Convert a 3D world coordinate (x, y, z) to a 2D pixel coordinate (x, y) in the map.
+
+    Parameters:
+        world_pos (list or tuple): (world_x, world_y, world_z) in real-world coordinates.
+        resolution (float): The map resolution (meters per pixel).
+        world_shift (list or tuple): The world shift offsets [shift_x, shift_y, shift_z].
+
+    Returns:
+        pixel (tuple): (pixel_x, pixel_y) in the semantic map.
     """
-    y_coords, x_coords = np.where(sem_map == floor_label)
-    if len(x_coords) == 0 or len(y_coords) == 0:
-        return None
-    min_x, max_x = np.min(x_coords), np.max(x_coords)
-    min_y, max_y = np.min(y_coords), np.max(y_coords)
-    world_min = pixel_to_world((min_x, min_y), resolution, world_shift, floor_y)
-    world_max = pixel_to_world((max_x, max_y), resolution, world_shift, floor_y)
-    return world_min, world_max
+    world_x, _, world_z = world_pos  # Ignore y since it's only height
+    pixel_x = int((world_x - world_shift[0]) / resolution)
+    pixel_y = int((world_z - world_shift[2]) / resolution)
+    return (pixel_x, pixel_y)
+# --- smoothing the sem map ---
+from scipy import stats, ndimage
+import matplotlib.pyplot as plt
+
+def show_semmap_compare(sem_map, smooth_map):
+    fig, axes = plt.subplots(1, 2, figsize=(12, 6))
+    # Display the original semantic map
+    im0 = axes[0].imshow(visualize_sem_map(sem_map, with_info=False, with_palette=False), cmap='viridis', interpolation='nearest')
+    axes[0].set_title("Original Semantic Map")
+    axes[0].axis('off')
+
+    # Display the smoothed semantic map
+    im1 = axes[1].imshow(visualize_sem_map(smooth_map, with_info=False, with_palette=False), cmap='viridis', interpolation='nearest')
+    axes[1].set_title("Smoothed Semantic Map")
+    axes[1].axis('off')
+
+    plt.tight_layout()
+    plt.show()
+
+# get floor navigable map from sim
+def get_nav_map_from_sim(sim, sample_resolution, y_min, y_max, n_height=5):
+    heights = np.linspace(y_min, y_max, n_height)
+    occupancy_maps = []
+    for h in heights:
+        occ_map = sim.pathfinder.get_topdown_view(sample_resolution, h)
+        occupancy_maps.append(occ_map)       
+    occupancy_maps = np.stack(occupancy_maps, axis=0)
+    return np.any(occupancy_maps, axis=0)
+
+# get local map
+def extract_sem_map_patch(map_semantic, map_pos, window_size=5, pad_value=0):
+    x, y = map_pos
+    half_window = window_size // 2
+
+    # Pad the map to prevent out-of-bounds errors
+    padded_map = np.pad(map_semantic, pad_width=half_window, mode='constant', constant_values=pad_value)
+    # Shift coordinates due to padding
+    x_padded, y_padded = x + half_window, y + half_window
+    return padded_map[y_padded - half_window : y_padded + half_window + 1, x_padded - half_window : x_padded + half_window + 1]
+
+# benefit sampling
+def mark_visited_area(visited_map, sampled_pos, local_map_range):
+    """
+    Marks a local area around a sampled position as visited.
+
+    Parameters:
+        visited_map (np.array): A boolean mask tracking sampled areas.
+        sampled_pos (tuple): The (x, y) pixel position being sampled.
+        local_map_range (int): The size of the local area to mark.
+
+    Returns:
+        None (modifies `visited_map` in place)
+    """
+    H, W = visited_map.shape
+    half_range = local_map_range // 2
+
+    # Compute bounds for the local area (ensure they stay within image bounds)
+    x_min = max(0, sampled_pos[0] - half_range)
+    x_max = min(W, sampled_pos[0] + half_range + 1)
+    y_min = max(0, sampled_pos[1] - half_range)
+    y_max = min(H, sampled_pos[1] + half_range + 1)
+
+    # Mark the region as visited
+    visited_map[y_min:y_max, x_min:x_max] = True
+
+def is_area_visited(visited_map, sampled_pos, local_map_range):
+    """
+    Checks if a sampled area has already been visited.
+
+    Parameters:
+        visited_map (np.array): A boolean mask tracking sampled areas.
+        sampled_pos (tuple): The (x, y) pixel position to check.
+        local_map_range (int): The size of the local area to check.
+
+    Returns:
+        bool: True if the area has been sampled before, False otherwise.
+    """
+    H, W = visited_map.shape
+    half_range = local_map_range // 2
+
+    # Compute bounds for the local area
+    x_min = max(0, sampled_pos[0] - half_range)
+    x_max = min(W, sampled_pos[0] + half_range + 1)
+    y_min = max(0, sampled_pos[1] - half_range)
+    y_max = min(H, sampled_pos[1] + half_range + 1)
+
+    # Check if any pixel in the region is already visited
+    return np.any(visited_map[y_min:y_max, x_min:x_max])
 
 random.seed(48)
 
 if __name__ == "__main__":
-    grid_size = 0.05 # m
-    object_boundary = 1.0 # m
-    
-    available_scenes = ['Allensville', 'Beechwood', 'Benevolence', 'Coffeen', 'Collierville', 'Cosmos', 'Darden', 'Forkland', 'Hanson', 'Hiteman', 'Klickitat', 'Lakeville', 'Leonardo', 'Lindenwood', 'Markleeville', 'Marstons', 'Merom', 'Mifflinburg', 'Newfields', 'Onaga', 'Pinesdale', 'Pomaria', 'Ranchester', 'Shelbyville', 'Stockman', 'Tolstoy', 'Wainscott', 'Wiconisco', 'Woodbine']
-
-    maps_info = json.load(open(osp.join(SEM_MAP_SAVE_ROOT, 'semmap_GT_info.json')))
+    only_gibson_nav = True
+    if_debugg = False
 
     dset = "gibson"
+    nav_scenes = ['Allensville', 'Beechwood', 'Benevolence', 'Coffeen', 'Collierville', 'Cosmos', 'Darden', 'Forkland', 'Hanson', 'Hiteman', 'Klickitat', 'Lakeville', 'Leonardo', 'Lindenwood', 'Markleeville', 'Marstons', 'Merom', 'Mifflinburg', 'Newfields', 'Onaga', 'Pinesdale', 'Pomaria', 'Ranchester', 'Shelbyville', 'Stockman', 'Tolstoy', 'Wainscott', 'Wiconisco', 'Woodbine']
+    maps_info = json.load(open(osp.join(SEM_MAP_SAVE_ROOT, 'semmap_GT_info.json')))
+    
+    if not only_gibson_nav:
+        scene_paths = sorted(
+            glob.glob(
+                os.path.join(SEM_MAP_SAVE_ROOT, "*.h5"),
+                recursive=True,
+            )
+        )
+        available_scenes = [x.split("/")[-1].split('.')[0] for x in scene_paths]
+    else:
+        available_scenes = nav_scenes
+    
+    local_map_range = 64
 
-    maps = {}
-    names = []
-    maps_xyz_info = {}
+    if if_debugg:
+        TMP_SAVE_DIR = "tmp/map_image"
+        os.makedirs(TMP_SAVE_DIR, exist_ok=True)
+        random.shuffle(available_scenes)
+    else:
+        TMP_SAVE_DIR = SAVE_DIR
 
-    visibility_size = 3.0
-
-    TMP_SAVE_DIR = "tmp/map_image"
-    os.makedirs(TMP_SAVE_DIR, exist_ok=True)
-
-    random.shuffle(available_scenes)
-
-    for scene_name in available_scenes:
+    for scene_name in tqdm(available_scenes, desc="Processing Scenes", unit="scene"):
         scene_sem_map_path =  os.path.join(SEM_MAP_SAVE_ROOT, f"{scene_name}.h5")
         scene_glb_path = os.path.join(SCENE_DIR, f'{scene_name}.glb')
         scene_navmesh_path =  os.path.join(SCENE_DIR, f'{scene_name}.navmesh')
+        scene_bounds =  json.load(open(os.path.join(SCENE_BOUNDS_DIR, f"{scene_name}.json")))
+
+        sample_ratio = 0.1 if scene_name in nav_scenes else 0.05
+
+        map_world_shift = maps_info[scene_name]['map_world_shift']
+        resolution = maps_info[scene_name]['resolution']
 
         # Load Habitat config
         sim, action_names, sim_settings = init_sim(scene_glb_path)
@@ -324,59 +427,93 @@ if __name__ == "__main__":
 
         with h5py.File(scene_sem_map_path, 'r') as fp:
             floor_ids = sorted([key for key in fp.keys() if is_int(key)])
-            for floor_id in floor_ids:
-                name = f'{scene_name}_{floor_id}'
-                map_world_shift = maps_info[scene_name]['map_world_shift']
+            while len(floor_ids):
+                floor_id = floor_ids.pop(0)
+                name = f'{scene_name}_{floor_id}'            
                 map_y = maps_info[scene_name][floor_id]['y_min']
-                resolution = maps_info[scene_name]['resolution']
                 map_semantic = np.array(fp[floor_id]['map_semantic'])
+
+                nuniq = len(np.unique(map_semantic))
+                if nuniq < MIN_OBJECTS_THRESH + 3: # too less objects in the scene, skip
+                    continue
+
 
                 tmp_scene_save_dir = os.path.join(TMP_SAVE_DIR, name)
                 os.makedirs(tmp_scene_save_dir, exist_ok=True)
 
-                # Convert to one-hot if needed (here we use the original sem_map)
+                # # Convert to one-hot if needed (here we use the original sem_map)
                 # semmap_oh = convert_maps_to_oh(map_semantic, dset=dset)
 
-                # --- Compute available (navigable) area ---
-                nav_coords_px = get_navigable_area_coordinates(map_semantic, floor_label=FLOOR_ID)
+                # make simulator align with extracted sem map
+                resolution_adjust = [-0.0001, -0.00005, -0.00015, -0.0002, -0.00019, -0.000126]
+
+                for d_reso in resolution_adjust:
+                    sim_topdown_map = sim.pathfinder.get_topdown_view(resolution+d_reso, map_y)
+                    if sim_topdown_map.shape == map_semantic.shape:
+                        break
+                assert sim_topdown_map.shape == map_semantic.shape, f"{name}, {map_semantic.shape}, but {sim_topdown_map.shape}"
+                # display_map(sim_topdown_map)
+                # hablab_topdown_map = get_map_hablab(sim, map_y, resolution)
+                # display_map(hablab_topdown_map)
+                # cv2.imwrite(f"{tmp_scene_save_dir}/navigable_topdown_map.png", hablab_topdown_map)
+
+                # get the union of navigable area and sample points
+                map_y_hi = scene_bounds[name]['yhi']                
+                nav_map_by_sim = get_nav_map_from_sim(sim, resolution + d_reso, map_y, map_y_hi)
+                nav_map_by_sem = (map_semantic == FLOOR_ID)
+                nav_map_combine = np.logical_and(nav_map_by_sim, nav_map_by_sem)# np.any(np.stack([nav_map_by_sim, nav_map_by_sem], axis=0), axis=0)
+                y_coords, x_coords = np.where(nav_map_combine)
+                nav_coords_px = list(zip(x_coords, y_coords))
+
                 if not nav_coords_px:
                     print(f"No navigable pixels found for {name}")
                     continue
                 
                 print(f"{len(nav_coords_px)} navigable positions")
-
-                # Get boundaries (in world coordinates) of the navigable area:
-                boundaries = get_navigable_area_boundaries(map_semantic, resolution, np.array(map_world_shift), map_y, floor_label=FLOOR_ID)
-                if boundaries is not None:
-                    world_min, world_max = boundaries
-                    print(f"{name} navigable area boundaries (world coords):")
-                    print(f"   Min: {world_min}")
-                    print(f"   Max: {world_max}")
-                else:
-                    print(f"Could not determine boundaries for {name}")
-
-                 # Optionally, convert a sampled pixel to world coordinate:
                 
-                for _ in range(3): # get 100 points
-                    sampled_pixel = random.choice(nav_coords_px)
+                n_samples =  int(len(nav_coords_px)*sample_ratio)
+                sampled_points = random.sample(nav_coords_px, n_samples)
+                # display_map(nav_map_combine, sampled_points)
+
+                visited_map = np.zeros_like(map_semantic, dtype=bool)
+
+                for sampled_pos in tqdm(sampled_points, desc=f"Processing Sampled Positions in {name}"):
+                    if is_area_visited(visited_map, sampled_pos, local_map_range):
+                        continue  # Skip if already visited
+
+                    # --- try get the corresponding position in habitat sim and extract image
+                    sampled_world_coord = pixel_to_world(sampled_pos, resolution, np.array(map_world_shift), map_y)
+                    if not sim.pathfinder.is_navigable(sampled_world_coord):
+                        sampled_world_coord = sim.pathfinder.snap_point(sampled_world_coord)
+                        sampled_pos = world_to_pixel(sampled_world_coord , resolution, map_world_shift)
+                    if not sim.pathfinder.is_navigable(sampled_world_coord):
+                        continue
+
+                    print(f"{name} sampled navigable pixel {sampled_pos} -> world position {sampled_world_coord}")
                     
+                    # extract local map:
+                    local_map = extract_sem_map_patch(map_semantic, sampled_pos, window_size=local_map_range)
+                    if sample_ratio == 0.05:
+                        mark_visited_area(visited_map, sampled_pos, local_map_range // 4)
+                    else:
+                        mark_visited_area(visited_map, sampled_pos, local_map_range // 6)
+                    if set(np.unique(local_map)).issubset({0, 1, 2}):
+                        continue
+
                     # Sample a heading from multiples of 30 degrees.
                     sampled_angle = random.choice(range(0, 360, 30))
-                    print(f"{name} sampled navigable pixel {sampled_pixel} with direction {sampled_angle}°")
+                    print(f"{name} sampled navigable pixel {sampled_pos} with direction {sampled_angle}°")
                     
-                    sample_save_dir = os.path.join(tmp_scene_save_dir, f"location_{sampled_pixel}_direction_{sampled_angle}")
+                    sample_save_dir = os.path.join(tmp_scene_save_dir, f"location_{sampled_pos}_direction_{sampled_angle}")
                     os.makedirs(sample_save_dir, exist_ok=True)
 
-                    map_img_with_sampled_point = visualize_sem_map(map_semantic, selected_point=sampled_pixel, selected_angle=sampled_angle)
-                    cv2.imwrite(f"{sample_save_dir}/topdown_map.png", map_img_with_sampled_point)
-                    
-                    # --- try get the corresponding position in habitat sim and extract image
-                    sampled_world_coord = pixel_to_world(sampled_pixel, resolution, np.array(map_world_shift), map_y)
-                    print(f"{name} sampled navigable pixel {sampled_pixel} -> world position {sampled_world_coord}")
-
+                    global_topdown_map = visualize_sem_map(map_semantic, selected_point=sampled_pos, selected_angle=sampled_angle)
+                    local_topdown_map = visualize_sem_map(local_map, selected_point=[local_map_range//2]*2, selected_angle=sampled_angle, with_info=False, with_palette=False)
+                    cv2.imwrite(f"{sample_save_dir}/global_topdown_map.png", global_topdown_map)
+                    cv2.imwrite(f"{sample_save_dir}/local_topdown_map.png", local_topdown_map)
 
                     agent_state = agent.get_state()
-
+ 
                     habitat_angle = -(sampled_angle+90)%360
 
                     sampled_quat = common_utils.quat_from_angle_axis(
@@ -388,21 +525,27 @@ if __name__ == "__main__":
                     agent.set_state(agent_state)
                     print("Agent placed at:", agent.get_state().position)
                     print("Agent rotation (quaternion):", agent.get_state().rotation)
-
-                    # --- Capture surrounding images from that position ---
+                    
+                    # --- Capture surrounding images from that position --- 
                     rgb_images = []
                     for rel_angle in [0, 90, 180, 270]:
+
+                        # action way to change angle
                         if rel_angle != 0:
                             for _ in range(3):
-                                action = "turn_left"
-                                print("action", action)
+                                action = "turn_right"
+                                # print("action", action)
                                 sim.step(action)
+                        
+                        # allow some time for rendering
+                        sim.step("stop")
 
-                        # # Compute the absolute angle (map & simulation) for this view.
+                        # Compute the absolute angle (map & simulation) for this view.
                         abs_angle = (sampled_angle + rel_angle) % 360
+
+                        # # set angle way to change
                         # habitat_angle = -(abs_angle+90)%360
                         # agent_state = agent.get_state()
-
                         # rotation = common_utils.quat_from_angle_axis(np.deg2rad(habitat_angle), np.array([0, 1, 0]))
                         # agent_state.rotation = rotation
                         # agent.set_state(agent_state)
@@ -413,10 +556,11 @@ if __name__ == "__main__":
                         rgb_images.append(rgb_bgr)
                         
                         cv2.imwrite(f"{sample_save_dir}/View_{abs_angle:.0f}.png", rgb_bgr)
-                        print(f"Captured view at absolute angle: {abs_angle:.0f}°")
+                        print(f"Captured view at absolute angle: {abs_angle:.0f}°")      
                     
-                    panorama = np.hstack(rgb_images)
-                    cv2.imwrite(f"{sample_save_dir}/Panorama.png", panorama)
-
+                    with h5py.File(f"{sample_save_dir}/local_data.h5", "w") as f:
+                        f.create_dataset("local_map", data=local_map) 
+                        f.create_dataset(f"rgb_views", data=rgb_images, compression="gzip") 
+                    # panorama = np.hstack(rgb_images)
+                    # cv2.imwrite(f"{sample_save_dir}/Panorama.png", panorama)
         sim.close()
-        break
