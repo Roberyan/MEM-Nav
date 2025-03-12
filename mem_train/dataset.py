@@ -3,24 +3,16 @@ import h5py
 import torch
 from torch.utils.data import Dataset
 import numpy as np
-import random
 from topdown_map_utils import convert_maps_to_oh, generate_map_view_mask
-
+from tqdm import tqdm
 import re
+from PIL import Image
 from constants import (
     GIBSON_CATEGORIES,
-    INV_OBJECT_CATEGORY_MAP
+    INV_OBJECT_CATEGORY_MAP,
+    OBJECT_CATEGORIES
 )
-
-def shuffle_views(view_info_groups):
-    indices = list(range(len(view_info_groups[0])))
-    random.shuffle(indices)
-
-    for idx in range(len(view_info_groups)):
-        view_info_groups[idx] = [view_info_groups[idx][i] for i in indices]
-
-    return view_info_groups
-
+    
 class MEM_build_Dataset(Dataset):
     local_map_size = (65, 65)
     map_resolution = 0.05
@@ -47,6 +39,7 @@ class MEM_build_Dataset(Dataset):
     def __len__(self):
         return len(self.h5_files)
 
+    # rule based loc and dir extraction from file path
     def get_sample_loc_dir(self, h5_path):
         match = re.search(self.pattern, h5_path)
         loc_x = int(match.group(1))
@@ -54,11 +47,13 @@ class MEM_build_Dataset(Dataset):
         direction = int(match.group(3))
         return (loc_x, loc_y), direction
 
+    # sem map to one hot map
     def get_one_hot(self, local_map, view_mask=None):
         sem_map = local_map if view_mask is None else np.where(view_mask, local_map, 0)
         semmap_oh = convert_maps_to_oh(sem_map)
         return (semmap_oh.sum(axis=(1, 2)) > 0).astype(np.int8)
 
+    # topdown map local mask
     def get_map_view_mask(self, local_map, init_dir):
         view_dir_mask = []
         for d_angle in self.view_angles:
@@ -72,12 +67,12 @@ class MEM_build_Dataset(Dataset):
 
         with h5py.File(h5_path, "r") as f:
             # Load the local map and RGB views.
-            local_map = f["local_map"][:]    # e.g., shape (H, W) or (H, W, C)
+            local_map = f["local_map"][:]    # e.g., shape (H, W) 
             rgb_views = f["rgb_views"][:]      # e.g., shape (num_views, H, W, C)
             # map_world_shift = f["map_world_shift"][:]
             if "blip2_embeds" in f:
                 blip2_embeds = f["blip2_embeds"][:]
-                blip2_embeds = torch.from_numpy(blip2_embeds)
+                blip2_embeds = torch.from_numpy(blip2_embeds).float()
             else:
                 blip2_embeds = None 
 
@@ -105,17 +100,57 @@ class MEM_build_Dataset(Dataset):
         return sample_dict
 
 # Example usage:
+def test_dataset(root_dir):
+    dataset = MEM_build_Dataset(root_dir=root_dir)
+    print("Total samples:", len(dataset))
+    cnt = 5
+    for sample in tqdm(dataset):
+        h5_file = sample["h5_path"]
+        print("Local map shape:", sample["local_map"].shape)   # e.g., (1, H, W)
+        print("RGB views shape:", sample["rgb_views"].shape)     # e.g., (num_views, C, H, W)
+        # onehot_views is a list of one-hot vectors for each view.
+        print("One-hot view vector shapes:", [oh.shape for oh in sample["onehot_views"]])
+        if "blip2_embeds" in sample:
+            print("blip2_embeds shape:", np.array(sample["blip2_embeds"]).shape)
+        cnt -= 1
+        if cnt<0:
+            break
+
+def pre_calculate_embeddings(root_path, nav_task="gibson", blip2_name="blip2_feature_extractor"):
+    # Recursively search for 'local_data.h5' files.
+    assert nav_task in root_path, f"Check if the path and nav task are corresponding!"
+    from mem_vae_utils import load_blip2_model_lavis, generate_mem_prompt
+
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    blip2_model, vis_processors, txt_processors = load_blip2_model_lavis(blip2_name)
+    # Move the model to the device.
+    blip2_model.to(device)
+    
+    mem_prompt = generate_mem_prompt(OBJECT_CATEGORIES[nav_task])
+
+    h5_files = []
+    for dirpath, _, filenames in os.walk(root_path):
+        if "local_data.h5" in filenames:
+            h5_files.append(os.path.join(dirpath, "local_data.h5"))
+
+    for h5_path in  tqdm(h5_files, desc=f"Precomputing blip2 embedding for mem_vae samples"):
+        with h5py.File(h5_path, "a") as f:
+            rgb_views = f["rgb_views"][:]      # e.g., shape (num_views, H, W, C)
+            
+            # Process each view using the visual processor.
+            processed_images = [vis_processors["eval"](Image.fromarray(img)).to(device) for img in rgb_views]
+            # Stack into a batch: shape (num_views, C, H, W)
+            images_batch = torch.stack(processed_images, dim=0).to(device)
+            text_input = txt_processors["eval"](mem_prompt)
+            # For BLIP2, text_input is expected as a list. We assume same prompt for all views.
+            sample = {"image": images_batch, "text_input": [text_input]*4}
+            # Extract features.
+            blip2_embeds = blip2_model.extract_features(sample)
+            f.create_dataset("blip2_embeds", data=blip2_embeds.multimodal_embeds.cpu().numpy(), compression="gzip")  
+
 if __name__ == "__main__":
     # Set your data directory.
     root_dir = "data/semantic_maps/gibson/image_map_pairs"
+    # pre_calculate_embeddings(root_dir)
+    test_dataset(root_dir)
     
-    dataset = MEM_build_Dataset(root_dir=root_dir)
-    print("Total samples:", len(dataset))
-    
-    sample = dataset[0]
-    print("Local map shape:", sample["local_map"].shape)   # e.g., (1, H, W)
-    print("RGB views shape:", sample["rgb_views"].shape)     # e.g., (num_views, C, H, W)
-    # onehot_views is a list of one-hot vectors for each view.
-    print("One-hot view vector shapes:", [oh.shape for oh in sample["onehot_views"]])
-    if "blip2_embeds" in sample:
-        print("blip2_embeds shape:", np.array(sample["blip2_embeds"]).shape)
