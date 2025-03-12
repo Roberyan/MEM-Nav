@@ -254,7 +254,7 @@ if __name__ == "__main__":
                         obs = sim.get_sensor_observations()
                         rgb_img = obs["rgb"]
                         rgb_bgr = cv2.cvtColor(rgb_img, cv2.COLOR_RGB2BGR)
-                        rgb_images.append(rgb_bgr)
+                        rgb_images.append(rgb_img)
                         
                         cv2.imwrite(f"{sample_save_dir}/View_{abs_angle:.0f}.png", rgb_bgr)
                         print(f"Captured view at absolute angle: {abs_angle:.0f}°")      
