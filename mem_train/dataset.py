@@ -9,7 +9,6 @@ import re
 from PIL import Image
 from constants import (
     GIBSON_CATEGORIES,
-    INV_OBJECT_CATEGORY_MAP,
     OBJECT_CATEGORIES
 )
     
@@ -20,13 +19,14 @@ class MEM_build_Dataset(Dataset):
     considered_semantic = GIBSON_CATEGORIES[1:]
     view_angles = [0, 90, 180, 270]
     
-    def __init__(self, root_dir):
+    def __init__(self, root_dir, shuffle_views=False):
         """
         Args:
             root_dir (str): Root directory containing subdirectories with h5 files.
         """
         self.root_dir = root_dir
         self.h5_files = []
+        self.shuffle_views = shuffle_views
         
         # Recursively search for 'local_data.h5' files.
         for dirpath, _, filenames in os.walk(self.root_dir):
@@ -78,15 +78,24 @@ class MEM_build_Dataset(Dataset):
 
         # Generate one-hot vectors for each view using corresponding view masks.
         view_masks = self.get_map_view_mask(local_map, map_dir)
-        oh_views = [self.get_one_hot(local_map, mask) for mask in view_masks]
-
-        # local_map_oh = self.get_one_hot(local_map)
+        oh_views = [torch.from_numpy(self.get_one_hot(local_map, mask)) for mask in view_masks]
+        oh_views = torch.stack(oh_views, dim=0)
+        # local_map_oh = self.get_one_hot(local_map) # one-hot for whole local map
 
         # Convert local_map to torch tensor; assume it's a 2D map.
         local_map_tensor = torch.from_numpy(local_map).unsqueeze(0).long()
         
         # Process rgb_views: convert from HWC to CHW and cast to float.
         rgb_views_tensor = torch.from_numpy(rgb_views).permute(0, 3, 1, 2).float()
+
+        # shuffle views order while keeping the corresponding across [rgb_views, one-hot_views, embedding views]
+        if self.shuffle_views:
+            num_views = rgb_views_tensor.size(0)
+            perm = torch.randperm(num_views)
+            rgb_views_tensor = rgb_views_tensor[perm]
+            oh_views = oh_views[perm]
+            if blip2_embeds is not None:
+                blip2_embeds = blip2_embeds[perm]
         
         sample_dict = {
             "local_map": local_map_tensor,      # Tensor, shape (1, H, W)
