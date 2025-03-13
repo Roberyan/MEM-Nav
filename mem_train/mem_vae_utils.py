@@ -8,7 +8,8 @@ def load_blip2_model_lavis(
     model, vis_processors, txt_processors = load_model_and_preprocess(
         name=model_name, 
         model_type=type, 
-        is_eval=True)
+        is_eval=True
+    )
 
     return model, vis_processors, txt_processors
 
