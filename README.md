@@ -38,6 +38,7 @@ other package install
 pip install -r requirements.txt
 
 pip install torch-scatter==1.4.0 -f https://data.pyg.org/whl/torch-1.12.0+cu102.html
+# conda install pytorch-scatter -c pyg
 
 cd dependencies
 git clone https://github.com/srama2512/astar_pycpp.git
