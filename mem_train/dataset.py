@@ -162,6 +162,6 @@ def pre_calculate_embeddings(root_path, nav_task="gibson", blip2_name="blip2_fea
 if __name__ == "__main__":
     # Set your data directory.
     root_dir = "data/semantic_maps/gibson/image_map_pairs"
-    # pre_calculate_embeddings(root_dir)
+    pre_calculate_embeddings(root_dir)
     test_dataset(root_dir)
     

@@ -86,6 +86,7 @@ if __name__ == "__main__":
             )
         )
         available_scenes = [x.split("/")[-1].split('.')[0] for x in scene_paths]
+        available_scenes = list(set(available_scenes) - set(nav_scenes))
     else:
         available_scenes = nav_scenes
     
@@ -177,7 +178,7 @@ if __name__ == "__main__":
 
                 used_points = [] 
                 for sampled_pos in tqdm(sampled_points, desc=f"Processing Sampled Positions in {name}"):
-                    if is_area_visited(visited_map, sampled_pos, local_map_range // 2):
+                    if is_area_visited(visited_map, sampled_pos, local_map_range // 3):
                         continue  # Skip if already visited
 
                     # --- try get the corresponding position in habitat sim and extract image
@@ -214,7 +215,7 @@ if __name__ == "__main__":
                     cv2.imwrite(f"{sample_save_dir}/local_topdown_map.png", local_topdown_map)
 
                     agent_state = agent.get_state()
- 
+
                     habitat_angle = -(sampled_angle+90)%360
 
                     sampled_quat = common_utils.quat_from_angle_axis(
@@ -253,10 +254,11 @@ if __name__ == "__main__":
                         
                         obs = sim.get_sensor_observations()
                         rgb_img = obs["rgb"]
-                        rgb_bgr = cv2.cvtColor(rgb_img, cv2.COLOR_RGB2BGR)
+                        if if_debugg:
+                            rgb_bgr = cv2.cvtColor(rgb_img, cv2.COLOR_RGB2BGR)
+                            cv2.imwrite(f"{sample_save_dir}/View_{abs_angle:.0f}.png", rgb_bgr)
                         rgb_images.append(rgb_img[:,:,:3])
                         
-                        cv2.imwrite(f"{sample_save_dir}/View_{abs_angle:.0f}.png", rgb_bgr)
                         print(f"Captured view at absolute angle: {abs_angle:.0f}°")      
                     
                     with h5py.File(f"{sample_save_dir}/local_data.h5", "w") as f:
@@ -264,7 +266,6 @@ if __name__ == "__main__":
                         f.create_dataset(f"rgb_views", data=rgb_images, compression="gzip") 
                         f.create_dataset("map_world_shift", data=map_world_shift) 
 
-                    if if_debugg:
                         panorama = np.hstack(rgb_images)
                         cv2.imwrite(f"{sample_save_dir}/Panorama.png", panorama)
                 display_map(nav_map_combine, used_points, os.path.join(tmp_scene_save_dir,"sampled_map.png"))
