@@ -125,7 +125,7 @@ def test_dataset(root_dir):
         if cnt<0:
             break
 
-def pre_calculate_embeddings(root_path, nav_task="gibson", blip2_name="blip2_feature_extractor"):
+def pre_calculate_embeddings(root_path, nav_task="gibson", blip2_name="blip2_feature_extractor", recalculate_all=False):
     # Recursively search for 'local_data.h5' files.
     assert nav_task in root_path, f"Check if the path and nav task are corresponding!"
     from mem_vae_utils import load_blip2_model_lavis, generate_mem_prompt
@@ -144,8 +144,10 @@ def pre_calculate_embeddings(root_path, nav_task="gibson", blip2_name="blip2_fea
 
     for h5_path in  tqdm(h5_files, desc=f"Precomputing blip2 embedding for mem_vae samples"):
         with h5py.File(h5_path, "a") as f:
+            if not recalculate_all:
+                if "blip2_embeds" in f:
+                    continue
             rgb_views = f["rgb_views"][:]      # e.g., shape (num_views, H, W, C)
-            
             # Process each view using the visual processor.
             processed_images = [vis_processors["eval"](Image.fromarray(img)).to(device) for img in rgb_views]
             # Stack into a batch: shape (num_views, C, H, W)
