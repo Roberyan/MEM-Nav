@@ -11,10 +11,14 @@ conda activate $conda_env_name
 
 blip2 and torch installation
 ``` bash
+# blip2 from salesforce-lavis
 pip install salesforce-lavis==1.0.2 transformers==4.26.0 numpy==1.26.4 imageio-ffmpeg pillow==10.4.0
-
 pip install torch==1.12.0+cu102 torchvision -f https://download.pytorch.org/whl/torch_stable.html
 # conda install pytorch==1.12 torchvision pytorch-cuda=11.7 -c pytorch -c nvidia
+
+# blip2 from huggingface transformers
+pip install  transformers==4.45.0 numpy==1.26.4 imageio-ffmpeg pillow==10.4.0 peft accelerate
+pip install absl-py protobuf scipy
 ```
 
 habitat install
