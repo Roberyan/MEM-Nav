@@ -1,5 +1,5 @@
-git config --local user.name "Roberyan"
-git config --local user.email "boyang.liu@u.nus.edu"
+git config user.name "Roberyan"
+git config user.email "boyang.liu@u.nus.edu"
 
 export PONI_ROOT=$PWD
 export PYTHONPATH=$PYTHONPATH:$PONI_ROOT
@@ -12,6 +12,9 @@ ACTIVE_DATASET="gibson" python mem_train/create_semantic_maps.py
 
 # sample from sim to extract local views map pairs
 python mem_train/create_image_map.py
+
+# precompute blip2 embeddings, currently just in dataset.py, need to arrange later
+python mem_train/dataset.py 
 
 # delete views png to save memory
 find data/semantic_maps/gibson/image_map_pairs -type f -name 'Panorama*.png' -delete 
