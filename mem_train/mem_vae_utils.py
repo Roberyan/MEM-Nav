@@ -13,6 +13,19 @@ def load_blip2_model_lavis(
 
     return model, vis_processors, txt_processors
 
+def load_instructblip_model_lavis(
+    model_name="blip2_t5_instruct",
+    type="flant5xl"
+):
+    assert model_name in ["blip2_t5_instruct"], f"{model_name} hasn't been modified in Larvis code, can not be used in this project"
+    
+    model, vis_processors, txt_processors = load_model_and_preprocess(
+        name=model_name, 
+        model_type=type, 
+        is_eval=True
+    )
+    return model, vis_processors, txt_processors
+
 def generate_mem_prompt(objects_list):
     objects_str = ", ".join(objects_list)       
     return (

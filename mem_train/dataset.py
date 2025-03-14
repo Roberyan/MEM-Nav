@@ -128,10 +128,14 @@ def test_dataset(root_dir):
 def pre_calculate_embeddings(root_path, nav_task="gibson", blip2_name="blip2_feature_extractor", recalculate_all=False):
     # Recursively search for 'local_data.h5' files.
     assert nav_task in root_path, f"Check if the path and nav task are corresponding!"
-    from mem_vae_utils import load_blip2_model_lavis, generate_mem_prompt
+    from mem_vae_utils import load_blip2_model_lavis, generate_mem_prompt, load_instructblip_model_lavis
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    blip2_model, vis_processors, txt_processors = load_blip2_model_lavis(blip2_name)
+    
+    if "instruct" in blip2_name:
+        blip2_model, vis_processors, txt_processors = load_instructblip_model_lavis(blip2_name)
+    else:
+        blip2_model, vis_processors, txt_processors = load_blip2_model_lavis(blip2_name)
     # Move the model to the device.
     blip2_model.to(device)
     
@@ -156,12 +160,20 @@ def pre_calculate_embeddings(root_path, nav_task="gibson", blip2_name="blip2_fea
             # For BLIP2, text_input is expected as a list. We assume same prompt for all views.
             sample = {"image": images_batch, "text_input": [text_input]*4}
             # Extract features.
-            blip2_embeds = blip2_model.extract_features(sample)
-            f.create_dataset("blip2_embeds", data=blip2_embeds.multimodal_embeds.cpu().numpy(), compression="gzip")  
+            if recalculate_all:
+                if "blip2_embeds" in f:
+                    del f["blip2_embeds"]
+                    
+            if "instruct" in blip2_name:
+                blip2_embeds = blip2_model.get_qformer_features(sample)
+                f.create_dataset("blip2_embeds", data=blip2_embeds.cpu().numpy(), compression="gzip")  
+            else:
+                blip2_embeds = blip2_model.extract_features(sample)
+                f.create_dataset("blip2_embeds", data=blip2_embeds.multimodal_embeds.cpu().numpy(), compression="gzip")  
 
 if __name__ == "__main__":
     # Set your data directory.
     root_dir = "data/semantic_maps/gibson/image_map_pairs"
-    pre_calculate_embeddings(root_dir)
+    pre_calculate_embeddings(root_dir,  blip2_name="blip2_t5_instruct", recalculate_all=True)
     test_dataset(root_dir)
     
