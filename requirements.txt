@@ -15,3 +15,8 @@ yacs
 tensorboard==2.8.0
 setuptools==58.2.0
 wandb
+accelerate==0.25
+peft==0.10.0
+moviepy==1.0.3
+diffusers==0.16.0
+huggingface_hub==0.24.6

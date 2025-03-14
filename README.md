@@ -12,13 +12,19 @@ conda activate $conda_env_name
 blip2 and torch installation
 ``` bash
 # blip2 from salesforce-lavis
-pip install salesforce-lavis==1.0.2 transformers==4.26.0 numpy==1.26.4 imageio-ffmpeg pillow==10.4.0
-pip install torch==1.12.0+cu102 torchvision -f https://download.pytorch.org/whl/torch_stable.html
-# conda install pytorch==1.12 torchvision pytorch-cuda=11.7 -c pytorch -c nvidia
+# pip install salesforce-lavis==1.0.2 transformers==4.26.0 numpy==1.26.4 imageio-ffmpeg pillow==10.4.0 blip2
+# use instructblip
+git clone https://github.com/salesforce/LAVIS.git
+cd LAVIS
+pip install -e .
 
-# blip2 from huggingface transformers
+# blip2 from huggingface transformers (no qformer feature extraction provided)
 pip install  transformers==4.45.0 numpy==1.26.4 imageio-ffmpeg pillow==10.4.0 peft accelerate
 pip install absl-py protobuf scipy
+
+# install torch
+pip install torch==1.12.0+cu102 torchvision -f https://download.pytorch.org/whl/torch_stable.html
+# conda install pytorch torchvision torchaudio pytorch-cuda=11.7 -c pytorch -c nvidia
 ```
 
 habitat install
@@ -29,7 +35,7 @@ cd dependencies
 git clone --branch v0.2.1 https://github.com/facebookresearch/habitat-sim.git
 cd habitat-sim 
 pip install -r requirements.txt    
-python setup.py install --build-datatool --with-cuda # if not successfully built, use `./build.sh --with-cuda` instead
+python setup.py install --build-datatool --with-cuda --headless # if not successfully built, use `./build.sh --with-cuda` instead
 
 cd ..
 git clone --branch v0.2.1 https://github.com/facebookresearch/habitat-lab.git

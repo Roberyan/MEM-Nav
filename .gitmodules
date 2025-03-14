@@ -7,3 +7,6 @@
 [submodule "dependencies/habitat-sim"]
 	path = dependencies/habitat-sim
 	url = git@github.com:facebookresearch/habitat-sim.git
+[submodule "dependencies/LAVIS"]
+	path = dependencies/LAVIS
+	url = https://github.com/salesforce/LAVIS.git

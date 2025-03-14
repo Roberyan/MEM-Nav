@@ -13,4 +13,7 @@ ACTIVE_DATASET="gibson" python mem_train/create_semantic_maps.py
 # sample from sim to extract local views map pairs
 python mem_train/create_image_map.py
 
+# delete views png to save memory
+find data/semantic_maps/gibson/image_map_pairs -type f -name 'Panorama*.png' -delete 
+
 ln -s /home/marmot/Boyang/MEM-Nav/data /home/marmot/Boyang/Mcomp/MEM-Nav/data # data share without duplicate
