@@ -83,7 +83,7 @@ class MEM_build_Dataset(Dataset):
         # local_map_oh = self.get_one_hot(local_map) # one-hot for whole local map
 
         # Convert local_map to torch tensor; assume it's a 2D map.
-        local_map_tensor = torch.from_numpy(local_map).unsqueeze(0).long()
+        local_map_tensor = torch.from_numpy(local_map).long()
         
         # Process rgb_views: convert from HWC to CHW and cast to float.
         rgb_views_tensor = torch.from_numpy(rgb_views).permute(0, 3, 1, 2).float()

@@ -1,5 +1,7 @@
-import random
+import torch
 from lavis.models import load_model_and_preprocess
+import torchvision.transforms as T
+to_pil = T.ToPILImage()
 
 def load_blip2_model_lavis(
     model_name="blip2_feature_extractor", 
@@ -33,3 +35,21 @@ def generate_mem_prompt(objects_list):
         f"and key objects: {objects_str}. "
         "Pay attention to the spatial relationships and form a topdown map to benefit navigation."
     )
+
+# return batch wise embeddings
+def prepare_blip2_embeddings(model, vis_processor, txt_processor, rgb_views, prompt_input, device=None):
+    # Determine device from model if not provided.
+    if device is None:
+        device = model.device
+    
+    rgb_views_batch = rgb_views.unsqueeze(0) if rgb_views.dim() == 4 else rgb_views # single sample, expand a batch dimension
+    
+    B, num_views, C, H, W = rgb_views_batch.size()
+    
+    # Flatten the batch and view dimensions: (B * 4, 3, H, W)
+    rgb_views_flat = rgb_views_batch.reshape(B * num_views, C, H, W)
+    
+    rgb_inputs_batch = torch.stack([vis_processor["eval"](to_pil(rgb_views_flat[i])) for i in range(B*num_views)]).to(device)
+    blip_embeds_flat = model.get_qformer_features({"image": rgb_inputs_batch, "prompt": prompt_input})
+    blip_embeds_batch = blip_embeds_flat.reshape(B, num_views, blip_embeds_flat.size(1), blip_embeds_flat.size(2))
+    return blip_embeds_batch
