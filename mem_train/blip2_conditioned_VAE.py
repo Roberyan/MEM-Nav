@@ -203,7 +203,7 @@ class TopdownMapVAEDecoder(nn.Module):
         return logits # (B, num_classes, 65, 65)
 
 class TopdownMapVAE(nn.Module):
-    def __init__(self, encoder, decoder, latent_dim=128):
+    def __init__(self, encoder, decoder, latent_dim=128, oh_aux_task=False, oh_aux_class=17):
         """
         Combined conditional VAE for topdown map generation.
 
@@ -216,6 +216,9 @@ class TopdownMapVAE(nn.Module):
         self.encoder = encoder
         self.decoder = decoder
         self.latent_dim = latent_dim
+        self.oh_aux_task = oh_aux_task
+        if oh_aux_task:
+            self.aux_classifier = nn.Linear(latent_dim, oh_aux_class)
 
     def reparameterize(self, mu, logvar):
         """Applies the reparameterization trick."""
@@ -239,6 +242,11 @@ class TopdownMapVAE(nn.Module):
         z = self.reparameterize(mu, logvar)
         # Decode to get output logits.
         logits = self.decoder(z, mem_condition)
+        
+        if self.oh_aux_task:
+            aux_out = self.aux_classifier(mu)
+            return logits, mu, logvar, aux_out
+
         return logits, mu, logvar
 
 def create_MemMapVAE(model_config):
@@ -294,7 +302,13 @@ def create_MemMapVAE(model_config):
     )
     
     # Combine encoder and decoder into the VAE.
-    vae = TopdownMapVAE(encoder, decoder, latent_dim=model_config["latent_dim"])
+    vae = TopdownMapVAE(
+        encoder, 
+        decoder, 
+        latent_dim=model_config["latent_dim"], 
+        oh_aux_task=model_config["oh_aux_task"],
+        oh_aux_class=model_config["num_classes"]-1
+    )
     
     return mem_generator, vae
     
@@ -311,7 +325,8 @@ if __name__ == "__main__":
         "decoder_use_cond_input": True,   # Use late conditioning in decoder.
         "mem_generator_token_dim": 768,
         "mem_generator_aggregated_dim": 768,
-        "mem_generator_use_attention": True
+        "mem_generator_use_attention": True,
+        "oh_aux_task": True
     }
     
     # Create models.

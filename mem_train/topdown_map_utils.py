@@ -200,9 +200,9 @@ def get_palette_image():
 def visualize_sem_map(sem_map, selected_point=None, selected_angle=None, with_info=True, with_palette=True):
     """
     Visualize the semantic map using the Gibson color palette and overlay:
-      - A coordinate legend in the top-left corner (drawn in red) indicating +X (arrow right) and +Z (arrow downward),
-      - A title at the top-center showing "Location: (x, y), Direction: xx°" in black,
-      - And, if provided, an oriented red triangle marker at the selected position.
+        - A coordinate legend in the top-left corner (drawn in red) indicating +X (arrow right) and +Z (arrow downward),
+        - A title at the top-center showing "Location: (x, y), Direction: xx°" in black,
+        - And, if provided, an oriented red triangle marker at the selected position.
     
     The overlays are drawn directly on the semantic map so that the map itself (before appending the palette)
     retains its original size.

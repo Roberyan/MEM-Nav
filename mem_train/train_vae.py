@@ -5,29 +5,37 @@ import torch.nn.functional as F
 import wandb
 from torch.utils.data import DataLoader
 from mem_train.dataset import MEM_build_Dataset  
+from mem_vae_utils import(
+    load_instructblip_model_lavis,
+    prepare_blip2_embeddings,
+    generate_mem_prompt
+)
+from blip2_conditioned_VAE import create_MemMapVAE
+from constants import OBJECT_CATEGORIES
 
 def custom_collate_fn(batch):
     """
     Custom collate function for MEM_build_Dataset.
     
     Expects each sample (dict) to contain:
-      - "local_map": Tensor of shape (1, 65, 65)
-      - "rgb_views": Tensor of shape (4, 3, 1024, 1024)
-      - "onehot_views": Tensor of shape (4, 17)
-      - "h5_path": str
-      - Optionally "blip2_embeds": Tensor of shape (4, 32, 768)
-    
+        - "local_map": Tensor of shape (65, 65)
+        - "rgb_views": Tensor of shape (4, 3, 1024, 1024)
+        - "onehot_info": Tensor of shape (4, 17)
+        - "h5_path": str
+        - Optionally "blip2_embeds": Tensor of shape (4, 32, 768)
+
     Returns a dictionary with batched tensors:
-      - "local_map": (B, 1, 65, 65)
-      - "rgb_views": (B, 4, 3, 1024, 1024)
-      - "onehot_views": (B, 4, 17)
-      - "blip2_embeds": (B, 4, 32, 768) if all samples have it; otherwise, it is omitted.
-      - "h5_path": list of strings
+        - "local_map": (B, 65, 65)
+        - "rgb_views": (B, 4, 3, 1024, 1024)
+        - "onehot_info": (B, 4, 17) if view_wise else (B, 17) for entire map
+        - "blip2_embeds": (B, 4, 32, 768) if all samples have it; otherwise, it is omitted.
+        - "h5_path": list of strings
     """
     batch_dict = {}
     batch_dict["local_map"] = torch.stack([sample["local_map"] for sample in batch], dim=0)
     batch_dict["rgb_views"] = torch.stack([sample["rgb_views"] for sample in batch], dim=0)
-    batch_dict["onehot_views"] = torch.stack([sample["onehot_views"] for sample in batch], dim=0)
+    batch_dict["onehot_info"] = torch.stack([sample["onehot_info"] for sample in # In the provided
+    batch], dim=0)
 
     # Only include "blip2_embeds" if every sample has it.
     if all("blip2_embeds" in sample and sample["blip2_embeds"] is not None for sample in batch):
@@ -35,32 +43,72 @@ def custom_collate_fn(batch):
     
     return batch_dict
 
-task_config = {
+train_config = {
+    "dataset_name": "gibson",
+    "enable_oh_aux_task": True,
     "num_epochs": 10,
     "batch_size": 4
 }
 
+model_config = {
+    "latent_dim": 128,
+    "cond_dim": 768, # mem condition input
+    "num_classes": 18, # map class to predict
+    "emb_dim": 32,
+    "transformer_dim": 128,
+    "n_transformer_layers": 2,
+    "n_heads": 4,
+    "encoder_use_cond_input": True,   # Use late conditioning in encoder.
+    "decoder_use_cond_input": True,   # Use late conditioning in decoder.
+    "mem_generator_token_dim": 768,
+    "mem_generator_aggregated_dim": 768,
+    "mem_generator_use_attention": True,
+    "oh_aux_task": False # if have oh prediction tasks
+}
+
 
 if __name__ == "__main__":
+    # load training data
     IMAGE_MAP_DIR = "data/semantic_maps/gibson/image_map_pairs"
-    dataset = MEM_build_Dataset(root_dir=IMAGE_MAP_DIR)
+    dataset = MEM_build_Dataset(
+        root_dir=IMAGE_MAP_DIR,
+        view_wise_oh=False, # False, one hot existence for the whole local map
+        shuffle_views=True # randomly shuffle views' order
+    )
+    
     dataloader = DataLoader(
         dataset, 
-        batch_size=task_config["batch_size"], 
+        batch_size=train_config["batch_size"], 
         shuffle=True, 
         num_workers=4,
         collate_fn=custom_collate_fn  # Use the collate function defined earlier.
     )
+    
+    # load training model
+    model_config["oh_aux_task"] = train_config["enable_oh_aux_task"]
+    mem_generator, map_vae = create_MemMapVAE(model_config)
+    
+    # loss function defined
 
-
-    for epoch in range(task_config["num_epochs"]):
+    for epoch in range(train_config["num_epochs"]):
         for batch in dataloader:
-            print("Local map shape:", batch["local_map"].shape)    # e.g., (B, 1, 65, 65)
-            print("RGB views shape:", batch["rgb_views"].shape)      # e.g., (B, 4, 3, 1024, 1024)
-            print("One-hot views shape:", batch["onehot_views"].shape) # e.g., (B, 4, 17)
+            local_map_batch = batch["local_map"] # (B, 65, 65)
+            rgb_views_batch = batch["rgb_views"] # (B, 4, 3, 1024, 1024)
+            oh_batch = batch["onehot_info"] # (B, 17) or (B, 4, 17)
             if "blip2_embeds" in batch:
-                print("BLIP2 embeds shape:", batch["blip2_embeds"].shape)
-            break  # Remove break to iterate over the full dataset.
+                blip2_embeds_batch = batch["blip2_embeds"] # (B, 4, 32, 768)
+            else:
+                try:
+                    blip2_embeds_batch = prepare_blip2_embeddings(
+                        blip2_model, 
+                        vis_processors, 
+                        txt_processors, 
+                        batch["rgb_views"], 
+                        mem_prompt)
+                except: # first time loading
+                    blip2_model_name="blip2_t5_instruct"
+                    blip2_model, vis_processors, txt_processors = load_instructblip_model_lavis(blip2_model_name)
+                    mem_prompt = generate_mem_prompt(OBJECT_CATEGORIES[train_config['dataset_name']])
 
 
 

@@ -95,7 +95,8 @@ class MEM_build_Dataset(Dataset):
             num_views = rgb_views_tensor.size(0)
             perm = torch.randperm(num_views)
             rgb_views_tensor = rgb_views_tensor[perm]
-            oh_views = oh_views[perm]
+            if self.view_wise_oh:
+                oh_views = oh_views[perm]
             if blip2_embeds is not None:
                 blip2_embeds = blip2_embeds[perm]
         
