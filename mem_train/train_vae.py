@@ -14,6 +14,7 @@ from blip2_conditioned_VAE import create_MemMapVAE
 from constants import OBJECT_CATEGORIES
 import os
 from datetime import datetime
+import json
 
 def custom_collate_fn(batch):
     batch_dict = {}
@@ -64,8 +65,8 @@ train_config = {
     "model_name": "mem_map_vae",
     "dataset_name": "gibson",
     "enable_oh_aux_task": True, # if have oh prediction tasks
-    "num_epochs": 20,
-    "batch_size": 16,
+    "num_epochs": 40,
+    "batch_size": 32,
     "learning_rate": 1e-4,
     "weight_decay": 1e-5,
     "beta": 1.0,
@@ -112,7 +113,8 @@ if __name__ == "__main__":
 
     # Initialize wandb.
     task_name = f"{train_config['model_name']}_{train_config['dataset_name']}"
-    wandb.init(project=task_name, config=train_config)
+    start_time = datetime.now().strftime("%Y%m%d_%H%M%S")
+    wandb.init(project=task_name, config=train_config, name=f"{task_name}_{start_time}")
     
     # optimizer = optim.Adam([{"params": map_vae.encoder.parameters(), "lr": 1e-4},{"params": map_vae.decoder.parameters(), "lr": 1e-4},{"params": mem_generator.parameters(), "lr": 1e-5}], weight_decay=1e-5)
     optimizer = optim.Adam(
@@ -132,7 +134,26 @@ if __name__ == "__main__":
     # Ensure checkpoints directory exists.
     MODEL_SAVE_DIR = "mem_train/checkpoints"
     os.makedirs(MODEL_SAVE_DIR, exist_ok=True)
+    meta_file = os.path.join(MODEL_SAVE_DIR, f"{task_name}_meta.json")
     
+    # Check if continuing training.
+    start_epoch = 0
+    best_loss = float("inf")
+    if os.path.exists(meta_file):
+        with open(meta_file, "r") as f:
+            meta_data = json.load(f)
+        start_epoch = meta_data.get("last_epoch", 0)
+        best_loss = meta_data.get("best_loss", float("inf"))
+        latest_checkpoint = meta_data.get("latest_checkpoint", None)
+        if latest_checkpoint and os.path.exists(latest_checkpoint):
+            checkpoint = torch.load(latest_checkpoint)
+            map_vae.load_state_dict(checkpoint["map_vae_state_dict"])
+            mem_generator.load_state_dict(checkpoint["mem_generator_state_dict"])
+            optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
+            global_step = checkpoint.get("global_step", 0)
+        print(f"Resumed training from epoch {start_epoch+1}, best loss {best_loss:.4f}")
+    
+        
     for epoch in range(train_config["num_epochs"]):
         epoch_loss = 0.0
         pbar = tqdm(dataloader, desc=f"Epoch {epoch+1}/{train_config['num_epochs']}")
@@ -148,7 +169,7 @@ if __name__ == "__main__":
                         blip2_model, 
                         vis_processors, 
                         txt_processors, 
-                        batch["rgb_views"], 
+                        rgb_views_batch, 
                         mem_prompt,
                         device
                     )
@@ -208,11 +229,9 @@ if __name__ == "__main__":
         avg_epoch_loss = epoch_loss / len(dataloader)
         print(f"Epoch {epoch+1} average loss: {avg_epoch_loss:.4f}")
         
-        # Save checkpoint with time info.
-        current_time = datetime.now().strftime("%Y%m%d_%H%M%S")
-        checkpoint_path = f"{MODEL_SAVE_DIR}/vae_checkpoint_epoch_{epoch+1}_{current_time}.pth"
+        # Save checkpoint
+        latest_checkpoint_path = f"{MODEL_SAVE_DIR}/vae_checkpoint_latest.pth"
         checkpoint = {
-            "epoch": epoch + 1,
             "map_vae_state_dict": map_vae.state_dict(),
             "mem_generator_state_dict": mem_generator.state_dict(),
             "optimizer_state_dict": optimizer.state_dict(),
@@ -220,8 +239,28 @@ if __name__ == "__main__":
             "train_config": train_config,
             "model_config": model_config
         }
-        torch.save(checkpoint, checkpoint_path)
-        wandb.save(checkpoint_path)
+        torch.save(checkpoint, latest_checkpoint_path)
+        wandb.save(latest_checkpoint_path)
+        
+        # Update meta data.
+        meta_data = {
+            "last_epoch": epoch + 1,
+            "global_step": global_step,
+            "latest_checkpoint": latest_checkpoint_path,
+            "best_loss": best_loss
+        }
+        
+        if avg_epoch_loss < best_loss:
+            best_loss = avg_epoch_loss
+            best_checkpoint_path = f"{MODEL_SAVE_DIR}/vae_checkpoint_best.pth"
+            torch.save(checkpoint, best_checkpoint_path)
+            meta_data["best_loss"] = best_loss
+            meta_data["best_checkpoint"] = best_checkpoint_path
+            meta_data["best_epoch"] = epoch
+            wandb.save(best_checkpoint_path)
+        
+        with open(meta_file, "w") as f:
+            json.dump(meta_data, f)
 
     wandb.finish()
 
