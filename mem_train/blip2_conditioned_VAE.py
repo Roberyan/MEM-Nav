@@ -241,49 +241,92 @@ class TopdownMapVAE(nn.Module):
         logits = self.decoder(z, mem_condition)
         return logits, mu, logvar
 
-
+def create_MemMapVAE(model_config):
+    """
+    Creates the MemGenerator and VAE (encoder + decoder) based on a configuration dictionary.
+    
+    Args:
+        config (dict): Configuration dictionary with keys:
+            - latent_dim: int, latent space dimension.
+            - cond_dim: int, condition vector dimension.
+            - num_classes: int, number of classes in the topdown map.
+            - emb_dim: int, embedding dimension for each class id.
+            - transformer_dim: int, transformer encoder feature dimension.
+            - n_transformer_layers: int, number of transformer encoder layers.
+            - n_heads: int, number of attention heads in transformer.
+            - encoder_use_cond_input: bool, whether to inject condition early in the encoder.
+            - decoder_use_cond_input: bool, whether to inject condition early in the decoder.
+            - mem_generator_token_dim: int, token dimension for MemGenerator.
+            - mem_generator_aggregated_dim: int, aggregated dimension for MemGenerator.
+            - mem_generator_use_attention: bool, whether to use self-attention in MemGenerator.
+    
+    Returns:
+        tuple: (mem_generator, vae)
+            - mem_generator (nn.Module): The MemGenerator model.
+            - vae (nn.Module): The combined VAE model.
+    """
+    
+    # Create the MemGenerator.
+    mem_generator = MemGenerator(
+        token_dim=model_config["mem_generator_token_dim"],
+        aggregated_dim=model_config["mem_generator_aggregated_dim"],
+        use_attention=model_config["mem_generator_use_attention"]
+    )
+    
+    # Create the encoder.
+    encoder = TopdownMapHybridEncoder(
+        latent_dim=model_config["latent_dim"],
+        cond_dim=model_config["cond_dim"],
+        num_classes=model_config["num_classes"],
+        emb_dim=model_config["emb_dim"],
+        transformer_dim=model_config["transformer_dim"],
+        n_transformer_layers=model_config["n_transformer_layers"],
+        n_heads=model_config["n_heads"],
+        use_cond_input=model_config["encoder_use_cond_input"]
+    )
+    
+    # Create the decoder.
+    decoder = TopdownMapVAEDecoder(
+        latent_dim=model_config["latent_dim"],
+        cond_dim=model_config["cond_dim"],
+        num_classes=model_config["num_classes"],
+        use_cond_input=model_config["decoder_use_cond_input"]
+    )
+    
+    # Combine encoder and decoder into the VAE.
+    vae = TopdownMapVAE(encoder, decoder, latent_dim=model_config["latent_dim"])
+    
+    return mem_generator, vae
     
 if __name__ == "__main__":
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    config = {
+        "latent_dim": 128,
+        "cond_dim": 768,
+        "num_classes": 18,
+        "emb_dim": 32,
+        "transformer_dim": 128,
+        "n_transformer_layers": 2,
+        "n_heads": 4,
+        "encoder_use_cond_input": True,   # Use late conditioning in encoder.
+        "decoder_use_cond_input": True,   # Use late conditioning in decoder.
+        "mem_generator_token_dim": 768,
+        "mem_generator_aggregated_dim": 768,
+        "mem_generator_use_attention": True
+    }
+    
+    # Create models.
+    mem_generator, vae = create_MemMapVAE(config)
 
     # no blip2 embedding situation, generate from rgb_views
     mem_prompt = generate_mem_prompt(OBJECT_CATEGORIES["gibson"])
     blip2_model_name="blip2_t5_instruct"
     blip2_model, vis_processors, txt_processors = load_instructblip_model_lavis(blip2_model_name)
-    
-    mem_generator = MemGenerator(token_dim=768, aggregated_dim=768, use_attention=True)
-    
-    latent_dim = 128
-    cond_dim = 768
-    num_classes = 18
 
     batch_size = 2
-    local_map_batch = torch.randint(0, num_classes, (batch_size, 65, 65))  # (B, 65, 65)
+    local_map_batch = torch.randint(0, config["num_classes"], (batch_size, 65, 65))  # (B, 65, 65)
     rgb_views_batch = torch.randn(batch_size, 4, 3, 1024, 1024)
     blip2_embeds_batch = prepare_blip2_embeddings(blip2_model, vis_processors, txt_processors, rgb_views_batch, mem_prompt)
-    mem_condition_batch, _ = mem_generator(blip2_embeds_batch)              # (B, 768)
-
-    # Initialize encoder and decoder.
-    encoder = TopdownMapHybridEncoder(
-        latent_dim=latent_dim,
-        cond_dim=cond_dim,
-        num_classes=num_classes,
-        emb_dim=32,
-        transformer_dim=128,
-        n_transformer_layers=2,
-        n_heads=4,
-        use_cond_input=True
-    )
-
-    decoder = TopdownMapVAEDecoder(
-        latent_dim=latent_dim,
-        cond_dim=cond_dim,
-        num_classes=num_classes,
-        use_cond_input=True
-    )
-
-    # Create the combined VAE model.
-    vae = TopdownMapVAE(encoder, decoder, latent_dim=latent_dim)
+    mem_condition_batch, _ = mem_generator(blip2_embeds_batch)  # (B, 768)
 
     # Forward pass.
     logits, mu, logvar = vae(local_map_batch, mem_condition_batch)
