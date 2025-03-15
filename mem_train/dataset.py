@@ -19,7 +19,7 @@ class MEM_build_Dataset(Dataset):
     considered_semantic = GIBSON_CATEGORIES[1:]
     view_angles = [0, 90, 180, 270]
     
-    def __init__(self, root_dir, shuffle_views=False):
+    def __init__(self, root_dir, view_wise_oh=False, shuffle_views=False):
         """
         Args:
             root_dir (str): Root directory containing subdirectories with h5 files.
@@ -27,7 +27,7 @@ class MEM_build_Dataset(Dataset):
         self.root_dir = root_dir
         self.h5_files = []
         self.shuffle_views = shuffle_views
-        
+        self.view_wise_oh = view_wise_oh
         # Recursively search for 'local_data.h5' files.
         for dirpath, _, filenames in os.walk(self.root_dir):
             if "local_data.h5" in filenames:
@@ -76,11 +76,13 @@ class MEM_build_Dataset(Dataset):
             else:
                 blip2_embeds = None 
 
-        # Generate one-hot vectors for each view using corresponding view masks.
-        view_masks = self.get_map_view_mask(local_map, map_dir)
-        oh_views = [torch.from_numpy(self.get_one_hot(local_map, mask)) for mask in view_masks]
-        oh_views = torch.stack(oh_views, dim=0)
-        # local_map_oh = self.get_one_hot(local_map) # one-hot for whole local map
+        if self.view_wise_oh:
+            # Generate one-hot vectors for each view using corresponding view masks.
+            view_masks = self.get_map_view_mask(local_map, map_dir)
+            oh_info = [torch.from_numpy(self.get_one_hot(local_map, mask)) for mask in view_masks]
+            oh_info = torch.stack(oh_info, dim=0)
+        else:
+            oh_info = torch.from_numpy(self.get_one_hot(local_map)) # one-hot for whole local map
 
         # Convert local_map to torch tensor; assume it's a 2D map.
         local_map_tensor = torch.from_numpy(local_map).long()
@@ -100,7 +102,7 @@ class MEM_build_Dataset(Dataset):
         sample_dict = {
             "local_map": local_map_tensor,      # Tensor, shape (1, H, W)
             "rgb_views": rgb_views_tensor,        # Tensor, shape (num_views, C, H, W)
-            "onehot_views": oh_views,             # List of one-hot arrays, one per view.
+            "onehot_info": oh_info,             # List of one-hot arrays, one per view.
             "h5_path": h5_path
         }
         if blip2_embeds is not None:
