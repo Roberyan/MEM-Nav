@@ -53,7 +53,7 @@ from topdown_map_utils import (
 random.seed(1234)
 
 if __name__ == "__main__":
-    only_gibson_nav = True
+    only_gibson_nav = False
     if_debugg = False
 
     dset = "gibson"

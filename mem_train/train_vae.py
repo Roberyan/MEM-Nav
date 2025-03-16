@@ -1,32 +1,21 @@
+import os
+import json
 import torch
 import torch.optim as optim
 import torch.nn.functional as F
 import wandb
 from tqdm import tqdm
+from datetime import datetime
 from torch.utils.data import DataLoader
-from mem_train.dataset import MEM_build_Dataset  
+from mem_train.dataset import MEM_build_Dataset, custom_collate_fn
 from mem_vae_utils import(
     load_instructblip_model_lavis,
     prepare_blip2_embeddings,
-    generate_mem_prompt
+    generate_mem_prompt,
+    WarmupDecayLR
 )
 from blip2_conditioned_VAE import create_MemMapVAE
 from constants import OBJECT_CATEGORIES
-import os
-from datetime import datetime
-import json
-
-def custom_collate_fn(batch):
-    batch_dict = {}
-    batch_dict["local_map"] = torch.stack([sample["local_map"] for sample in batch], dim=0)
-    batch_dict["rgb_views"] = torch.stack([sample["rgb_views"] for sample in batch], dim=0)
-    batch_dict["onehot_info"] = torch.stack([sample["onehot_info"] for sample in batch], dim=0)
-
-    # Only include "blip2_embeds" if every sample has it.
-    if all("blip2_embeds" in sample and sample["blip2_embeds"] is not None for sample in batch):
-        batch_dict["blip2_embeds"] = torch.stack([sample["blip2_embeds"] for sample in batch], dim=0)
-    
-    return batch_dict
 
 # loss calculation
 def compute_recon_loss(logits, target, class_weights=None, ignore_index=0):
@@ -65,10 +54,11 @@ train_config = {
     "model_name": "mem_map_vae",
     "dataset_name": "gibson",
     "enable_oh_aux_task": True, # if have oh prediction tasks
-    "num_epochs": 150,
+    "num_epochs": 40,
     "batch_size": 32,
     "learning_rate": 1e-4,
     "weight_decay": 1e-5,
+    "warm_up_steps": 100,
     "beta": 1.0,
     "aux_weight": 1.0,
     "class_weights": None # torch.tensor([0.0, 0.1, 0.1] + [1.0] * (18 - 3))
@@ -135,17 +125,33 @@ if __name__ == "__main__":
     wandb.init(project=task_name, config=train_config, name=f"{task_name}_{start_time}")
     
     # optimizer = optim.Adam([{"params": map_vae.encoder.parameters(), "lr": 1e-4},{"params": map_vae.decoder.parameters(), "lr": 1e-4},{"params": mem_generator.parameters(), "lr": 1e-5}], weight_decay=1e-5)
-    optimizer = optim.Adam(
+    optimizer = optim.AdamW(
         list(map_vae.parameters()) + list(mem_generator.parameters()),
         lr=train_config["learning_rate"],
         weight_decay=train_config["weight_decay"]
     )
-
-    global_step = 0
+    
+    total_steps = train_config["num_epochs"] * len(train_dataloader)
+    warmup_steps = train_config["warm_up_steps"]
+    scheduler = WarmupDecayLR(
+        optimizer,
+        total_steps=total_steps,
+        warmup_steps=warmup_steps,
+        warmup_min_lr=0,
+        warmup_max_lr=train_config["learning_rate"]
+    )
+    
+    # Set device and move models.
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     map_vae.to(device)
     mem_generator.to(device)
     
+    # Wrap in DataParallel if multiple GPUs are available.
+    if torch.cuda.device_count() > 1:
+        print(f"Using {torch.cuda.device_count()} GPUs for training!")
+        map_vae = torch.nn.DataParallel(map_vae)
+        mem_generator = torch.nn.DataParallel(mem_generator)
+        
     # Ensure checkpoints directory exists.
     MODEL_SAVE_DIR = "mem_train/checkpoints"
     os.makedirs(MODEL_SAVE_DIR, exist_ok=True)
@@ -153,6 +159,7 @@ if __name__ == "__main__":
     
     # Check if continuing training.
     start_epoch = 0
+    global_step = 0
     best_loss = float("inf")
     if os.path.exists(meta_file):
         with open(meta_file, "r") as f:
@@ -165,15 +172,17 @@ if __name__ == "__main__":
             map_vae.load_state_dict(checkpoint["map_vae_state_dict"])
             mem_generator.load_state_dict(checkpoint["mem_generator_state_dict"])
             optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
+            scheduler.load_state_dict(checkpoint["scheduler_state_dict"])
             global_step = checkpoint.get("global_step", 0)
         print(f"Resumed training from epoch {start_epoch+1}, best loss {best_loss:.4f}")
+    else:
+        meta_data = {}
     
         
     for epoch in range(start_epoch, train_config["num_epochs"]):
         # Set models to train mode
         map_vae.train()
         mem_generator.train()
-
         epoch_loss = 0.0
         pbar = tqdm(train_dataloader, desc=f"Epoch {epoch+1}/{train_config['num_epochs']}")
         for batch in pbar:
@@ -224,6 +233,7 @@ if __name__ == "__main__":
             optimizer.zero_grad()
             total_loss.backward()
             optimizer.step()
+            scheduler.step()  # Update the learning rate.
             
             global_step += 1
             epoch_loss += total_loss.item()
@@ -257,7 +267,7 @@ if __name__ == "__main__":
         test_aux_loss = 0.0
         num_batches = len(test_dataloader)
         with torch.no_grad():
-            for batch in test_dataloader:
+            for batch in tqdm(test_dataloader, desc="Test data measuring"):
                 local_map_batch = batch["local_map"].to(device)
                 rgb_views_batch = batch["rgb_views"].to(device)
                 oh_batch = batch["onehot_info"].to(device)
@@ -322,6 +332,7 @@ if __name__ == "__main__":
             "map_vae_state_dict": map_vae.state_dict(),
             "mem_generator_state_dict": mem_generator.state_dict(),
             "optimizer_state_dict": optimizer.state_dict(),
+            "scheduler_state_dict": scheduler.state_dict(),
             "global_step": global_step,
             "train_config": train_config,
             "model_config": model_config
@@ -337,8 +348,8 @@ if __name__ == "__main__":
             "latest_checkpoint": latest_checkpoint_path
         })
         
-        if avg_test_loss < best_loss:
-            best_loss = avg_test_loss
+        if avg_test_total< best_loss:
+            best_loss = avg_test_total
             best_checkpoint_path = os.path.join(MODEL_SAVE_DIR, "vae_checkpoint_best.pth")
             torch.save(checkpoint, best_checkpoint_path)
             meta_data["best_loss"] = best_loss

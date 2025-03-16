@@ -14,6 +14,19 @@ from constants import (
 import shutil
 import random
 
+def custom_collate_fn(batch):
+    batch_dict = {}
+    batch_dict["local_map"] = torch.stack([sample["local_map"] for sample in batch], dim=0)
+    batch_dict["rgb_views"] = torch.stack([sample["rgb_views"] for sample in batch], dim=0)
+    batch_dict["onehot_info"] = torch.stack([sample["onehot_info"] for sample in batch], dim=0)
+
+    # Only include "blip2_embeds" if every sample has it.
+    if all("blip2_embeds" in sample and sample["blip2_embeds"] is not None for sample in batch):
+        batch_dict["blip2_embeds"] = torch.stack([sample["blip2_embeds"] for sample in batch], dim=0)
+    
+    return batch_dict
+
+
 class MEM_build_Dataset(Dataset):
     local_map_size = (65, 65)
     map_resolution = 0.05
@@ -127,7 +140,7 @@ def test_dataset(root_dir):
         print("Local map shape:", sample["local_map"].shape)   # e.g., (1, H, W)
         print("RGB views shape:", sample["rgb_views"].shape)     # e.g., (num_views, C, H, W)
         # onehot_views is a list of one-hot vectors for each view.
-        print("One-hot view vector shapes:", [oh.shape for oh in sample["onehot_views"]])
+        print("One-hot view vector shapes:", [oh.shape for oh in sample["onehot_info"]])
         if "blip2_embeds" in sample:
             print("blip2_embeds shape:", np.array(sample["blip2_embeds"]).shape)
         cnt -= 1
@@ -244,7 +257,7 @@ def split_train_test(root_dir, test_ratio=0.2):
 
 if __name__ == "__main__":
     # Set your data directory.
-    root_dir = "data/semantic_maps/gibson/image_map_pairs"
+    root_dir = "data/semantic_maps/gibson/image_map_pairs/train"
     # split_train_test(root_dir, 0.2)
     pre_calculate_embeddings(root_dir,  blip2_name="blip2_t5_instruct", recalculate_all=False)
     test_dataset(root_dir)

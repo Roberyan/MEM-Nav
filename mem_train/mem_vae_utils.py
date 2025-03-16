@@ -3,6 +3,28 @@ from lavis.models import load_model_and_preprocess
 import torchvision.transforms as T
 to_pil = T.ToPILImage()
 
+# Define a custom warmup-decay scheduler.# Define a warmup-decay learning rate scheduler.
+class WarmupDecayLR(torch.optim.lr_scheduler._LRScheduler):
+    def __init__(self, optimizer, total_steps, warmup_steps, warmup_min_lr, warmup_max_lr, last_epoch=-1):
+        self.total_steps = total_steps
+        self.warmup_steps = warmup_steps
+        self.warmup_min_lr = warmup_min_lr
+        self.warmup_max_lr = warmup_max_lr
+        super(WarmupDecayLR, self).__init__(optimizer, last_epoch)
+    
+    def get_lr(self):
+        step = self.last_epoch + 1
+        if step < self.warmup_steps:
+            # Linear warmup: increase lr from warmup_min_lr to warmup_max_lr.
+            lr = self.warmup_min_lr + (self.warmup_max_lr - self.warmup_min_lr) * (step / self.warmup_steps)
+        else:
+            # Linear decay from warmup_max_lr to 0 over the remaining steps.
+            decay_steps = self.total_steps - self.warmup_steps
+            current_decay = step - self.warmup_steps
+            lr = self.warmup_max_lr * (1 - current_decay / decay_steps)
+            lr = max(lr, 0)
+        return [lr for _ in self.base_lrs]
+
 def load_blip2_model_lavis(
     model_name="blip2_feature_extractor", 
     type="pretrain_vitL"
