@@ -11,7 +11,9 @@ from constants import (
     GIBSON_CATEGORIES,
     OBJECT_CATEGORIES
 )
-    
+import shutil
+import random
+
 class MEM_build_Dataset(Dataset):
     local_map_size = (65, 65)
     map_resolution = 0.05
@@ -19,12 +21,16 @@ class MEM_build_Dataset(Dataset):
     considered_semantic = GIBSON_CATEGORIES[1:]
     view_angles = [0, 90, 180, 270]
     
-    def __init__(self, root_dir, view_wise_oh=False, shuffle_views=False):
-        """
-        Args:
-            root_dir (str): Root directory containing subdirectories with h5 files.
-        """
+    def __init__(self, 
+        root_dir, 
+        split= None,
+        view_wise_oh=False, 
+        shuffle_views=False
+    ):
         self.root_dir = root_dir
+        if split is not None:
+            self.root_dir = os.path.join(root_dir, split)
+        
         self.h5_files = []
         self.shuffle_views = shuffle_views
         self.view_wise_oh = view_wise_oh
@@ -174,9 +180,72 @@ def pre_calculate_embeddings(root_path, nav_task="gibson", blip2_name="blip2_fea
                 blip2_embeds = blip2_model.extract_features(sample)
                 f.create_dataset("blip2_embeds", data=blip2_embeds.multimodal_embeds.cpu().numpy(), compression="gzip")  
 
+def sample_and_move_locations(src_scene_dir, dest_dir, sample_ratio=0.2, move=True):
+    """
+    Samples a given ratio of "location_*" subdirectories from src_scene_dir and moves (or copies) them to dest_dir.
+    
+    Args:
+        src_scene_dir (str): Path to the source scene directory.
+        dest_dir (str): Path to the destination directory.
+        sample_ratio (float): Fraction of location folders to move. (e.g., 0.2 means 20%)
+        move (bool): If True, move the directories; if False, copy them.
+    """
+    # Ensure destination directory exists.
+    os.makedirs(dest_dir, exist_ok=True)
+    
+    # List all entries in the source directory.
+    all_entries = os.listdir(src_scene_dir)
+    # Filter for subdirectories that start with "location_"
+    location_dirs = [d for d in all_entries if os.path.isdir(os.path.join(src_scene_dir, d)) and d.startswith("location_")]
+    
+    if not location_dirs:
+        print("No location folders found in", src_scene_dir)
+        return
+    
+    # Determine the number to sample.
+    if sample_ratio != 1:
+        sample_count = max(1, int(len(location_dirs) * sample_ratio))
+        sampled_dirs = random.sample(location_dirs, sample_count)
+    else:
+        sampled_dirs = location_dirs
+    
+    for folder in sampled_dirs:
+        src_path = os.path.join(src_scene_dir, folder)
+        dest_path = os.path.join(dest_dir, folder)
+        if move:
+            shutil.move(src_path, dest_path)
+            print(f"Moved {src_path} to {dest_path}")
+        else:
+            shutil.copytree(src_path, dest_path)
+            print(f"Copied {src_path} to {dest_path}")
+
+def split_train_test(root_dir, test_ratio=0.2):
+    test_root = os.path.join(root_dir, "test")
+    train_root = os.path.join(root_dir, "train")
+    os.makedirs(test_root, exist_ok=True)
+    os.makedirs(train_root, exist_ok=True)
+    
+    scene_floor_dirs = os.listdir(root_dir)
+    for scene_floor_dir in scene_floor_dirs:
+        test_dest_dir = os.path.join(test_root, scene_floor_dir)
+        train_dest_dir = os.path.join(train_root, scene_floor_dir)
+        sample_and_move_locations(
+            os.path.join(root_dir, scene_floor_dir),
+            test_dest_dir,
+            test_ratio,
+            True
+        )
+        sample_and_move_locations(
+            os.path.join(root_dir, scene_floor_dir),
+            train_dest_dir,
+            1,
+            True
+        )
+
 if __name__ == "__main__":
     # Set your data directory.
     root_dir = "data/semantic_maps/gibson/image_map_pairs"
-    pre_calculate_embeddings(root_dir,  blip2_name="blip2_t5_instruct", recalculate_all=True)
+    # split_train_test(root_dir, 0.2)
+    pre_calculate_embeddings(root_dir,  blip2_name="blip2_t5_instruct", recalculate_all=False)
     test_dataset(root_dir)
     
