@@ -250,7 +250,11 @@ if __name__ == "__main__":
         # Evaluate on test set.
         map_vae.eval()
         mem_generator.eval()
-        test_loss = 0.0
+        test_total_loss = 0.0
+        test_recon_loss = 0.0
+        test_kl_loss = 0.0
+        test_aux_loss = 0.0
+        num_batches = len(test_dataloader)
         with torch.no_grad():
             for batch in test_dataloader:
                 local_map_batch = batch["local_map"].to(device)
@@ -290,14 +294,25 @@ if __name__ == "__main__":
                     aux_target=oh_batch.float(),
                     aux_weight=train_config.get("aux_weight", 1.0)
                 )
-                test_loss += total_loss_val.item()
+            
+                test_total_loss += total_loss_val.item()
+                test_recon_loss += recon_loss_val.item()
+                test_kl_loss += kl_loss_val.item()
+                # If aux_loss is None, add 0.
+                test_aux_loss += aux_loss_val.item() if aux_loss_val is not None else 0.0
         
-        avg_test_loss = test_loss / len(test_dataloader)
-        print(f"Epoch {epoch+1} average test loss: {avg_test_loss:.4f}")
+        avg_test_total = test_total_loss / num_batches
+        avg_test_recon = test_recon_loss / num_batches
+        avg_test_kl = test_kl_loss / num_batches
+        avg_test_aux = test_aux_loss / num_batches
+        print(f"Epoch {epoch+1} average test loss: Total: {avg_test_total:.4f}, Recon: {avg_test_recon:.4f}, KL: {avg_test_kl:.4f}, Aux: {avg_test_aux:.4f}")
         
         wandb.log({
             "epoch": epoch + 1,
-            "loss/test_total": avg_test_loss
+            "loss/test_total": avg_test_total,
+            "loss/test_recon": avg_test_recon,
+            "loss/test_kl": avg_test_kl,
+            "loss/test_aux": avg_test_aux
         })
         
         # Save checkpoint
@@ -314,12 +329,12 @@ if __name__ == "__main__":
         wandb.save(latest_checkpoint_path)
         
         # Update meta data.
-        meta_data = {
+        # Update or add new keys while preserving existing keys.
+        meta_data.update({
             "last_epoch": epoch + 1,
             "global_step": global_step,
-            "latest_checkpoint": latest_checkpoint_path,
-            "best_loss": best_loss
-        }
+            "latest_checkpoint": latest_checkpoint_path
+        })
         
         if avg_test_loss < best_loss:
             best_loss = avg_test_loss

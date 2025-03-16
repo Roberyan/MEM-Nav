@@ -21,7 +21,6 @@ from constants import (
 )
 from envs import init_sim
 from sim_utils import display_map, get_map_hablab
-import matplotlib.pyplot as plt
 # --- Paths and settings ---
 from constants import (
     SCENE_DIR,
@@ -30,7 +29,7 @@ from constants import (
     SCENE_BOUNDS_DIR
 )
 
-SAVE_DIR = "data/semantic_maps/gibson/image_map_pairs"
+SAVE_DIR = "data/semantic_maps/gibson/image_map_pairs/train"
 os.makedirs(SAVE_DIR, exist_ok=True)
 
 def is_int(s):
@@ -50,23 +49,6 @@ from topdown_map_utils import (
     mark_visited_area,
     is_area_visited
 )
-
-# --- smoothing the sem map ---
-def show_semmap_compare(sem_map, smooth_map):
-    fig, axes = plt.subplots(1, 2, figsize=(12, 6))
-    # Display the original semantic map
-    im0 = axes[0].imshow(visualize_sem_map(sem_map, with_info=False, with_palette=False), cmap='viridis', interpolation='nearest')
-    axes[0].set_title("Original Semantic Map")
-    axes[0].axis('off')
-
-    # Display the smoothed semantic map
-    im1 = axes[1].imshow(visualize_sem_map(smooth_map, with_info=False, with_palette=False), cmap='viridis', interpolation='nearest')
-    axes[1].set_title("Smoothed Semantic Map")
-    axes[1].axis('off')
-
-    plt.tight_layout()
-    plt.show()
-
 
 random.seed(1234)
 

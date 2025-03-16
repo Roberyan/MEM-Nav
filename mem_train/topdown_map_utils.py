@@ -2,7 +2,7 @@ import numpy as np
 from PIL import Image, ImageFont, ImageDraw
 import cv2
 from matplotlib import font_manager
-
+import matplotlib.pyplot as plt
 
 from constants import (
     GIBSON_CATEGORIES,
@@ -302,3 +302,19 @@ def visualize_sem_map(sem_map, selected_point=None, selected_angle=None, with_in
         semantic_img = np.concatenate([semantic_img, palette_img_resized], axis=1)
     
     return semantic_img
+
+# --- smoothing the sem map ---
+def show_semmap_compare(sem_map, smooth_map):
+    fig, axes = plt.subplots(1, 2, figsize=(12, 6))
+    # Display the original semantic map
+    im0 = axes[0].imshow(visualize_sem_map(sem_map, with_info=False, with_palette=False), cmap='viridis', interpolation='nearest')
+    axes[0].set_title("Original Topdown Map")
+    axes[0].axis('off')
+
+    # Display the smoothed semantic map
+    im1 = axes[1].imshow(visualize_sem_map(smooth_map, with_info=False, with_palette=False), cmap='viridis', interpolation='nearest')
+    axes[1].set_title("Compared Topdown Map")
+    axes[1].axis('off')
+
+    plt.tight_layout()
+    plt.show()
