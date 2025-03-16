@@ -65,7 +65,7 @@ train_config = {
     "model_name": "mem_map_vae",
     "dataset_name": "gibson",
     "enable_oh_aux_task": True, # if have oh prediction tasks
-    "num_epochs": 40,
+    "num_epochs": 150,
     "batch_size": 32,
     "learning_rate": 1e-4,
     "weight_decay": 1e-5,
@@ -92,18 +92,35 @@ model_config = {
 
 if __name__ == "__main__":
     # load training data
+    NUM_WORKERS = 8
     IMAGE_MAP_DIR = "data/semantic_maps/gibson/image_map_pairs"
-    dataset = MEM_build_Dataset(
+    train_dataset = MEM_build_Dataset(
         root_dir=IMAGE_MAP_DIR,
+        split= "train",
         view_wise_oh=False, # False, one hot existence for the whole local map
         shuffle_views=True # randomly shuffle views' order
     )
     
-    dataloader = DataLoader(
-        dataset, 
+    train_dataloader = DataLoader(
+        train_dataset, 
         batch_size=train_config["batch_size"], 
         shuffle=True, 
-        num_workers=4,
+        num_workers=NUM_WORKERS,
+        collate_fn=custom_collate_fn  # Use the collate function defined earlier.
+    )
+    
+    test_dataset = MEM_build_Dataset(
+        root_dir=IMAGE_MAP_DIR,
+        split= "test",
+        view_wise_oh=False, # False, one hot existence for the whole local map
+        shuffle_views=True # randomly shuffle views' order
+    )
+    
+    test_dataloader = DataLoader(
+        test_dataset, 
+        batch_size=train_config["batch_size"], 
+        shuffle=True, 
+        num_workers=NUM_WORKERS,
         collate_fn=custom_collate_fn  # Use the collate function defined earlier.
     )
     
@@ -123,9 +140,6 @@ if __name__ == "__main__":
         weight_decay=train_config["weight_decay"]
     )
 
-    map_vae.train()
-    mem_generator.train()
-    
     global_step = 0
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     map_vae.to(device)
@@ -154,9 +168,13 @@ if __name__ == "__main__":
         print(f"Resumed training from epoch {start_epoch+1}, best loss {best_loss:.4f}")
     
         
-    for epoch in range(train_config["num_epochs"]):
+    for epoch in range(start_epoch, train_config["num_epochs"]):
+        # Set models to train mode
+        map_vae.train()
+        mem_generator.train()
+
         epoch_loss = 0.0
-        pbar = tqdm(dataloader, desc=f"Epoch {epoch+1}/{train_config['num_epochs']}")
+        pbar = tqdm(train_dataloader, desc=f"Epoch {epoch+1}/{train_config['num_epochs']}")
         for batch in pbar:
             local_map_batch = batch["local_map"].to(device)  # (B, 65, 65)
             rgb_views_batch = batch["rgb_views"].to(device)    # (B, 4, 3, 1024, 1024)
@@ -213,21 +231,74 @@ if __name__ == "__main__":
             wandb.log({
                 "epoch": epoch + 1,
                 "step": global_step,
-                "loss/total": total_loss.item(),
-                "loss/recon": recon_loss.item(),
-                "loss/kl": kl_loss.item(),
-                "loss/aux": aux_loss.item() if aux_loss is not None else 0.0
+                "loss/train_total": total_loss.item(),
+                "loss/train_recon": recon_loss.item(),
+                "loss/train_kl": kl_loss.item(),
+                "loss/train_aux": aux_loss.item() if aux_loss is not None else 0.0
             })
             
             pbar.set_postfix({
-                "Total": f"{total_loss.item():.4f}",
-                "Recon": f"{recon_loss.item():.4f}",
-                "KL": f"{kl_loss.item():.4f}",
-                "Aux": f"{aux_loss.item():.4f}" if aux_loss is not None else "0.0000"
+                "Train Total": f"{total_loss.item():.4f}",
+                "Train Recon": f"{recon_loss.item():.4f}",
+                "Train KL": f"{kl_loss.item():.4f}",
+                "Train Aux": f"{aux_loss.item():.4f}" if aux_loss is not None else "0.0000"
             })
         
-        avg_epoch_loss = epoch_loss / len(dataloader)
-        print(f"Epoch {epoch+1} average loss: {avg_epoch_loss:.4f}")
+        avg_train_loss = epoch_loss / len(train_dataloader)
+        print(f"Epoch {epoch+1} average train loss: {avg_train_loss:.4f}")
+        
+        # Evaluate on test set.
+        map_vae.eval()
+        mem_generator.eval()
+        test_loss = 0.0
+        with torch.no_grad():
+            for batch in test_dataloader:
+                local_map_batch = batch["local_map"].to(device)
+                rgb_views_batch = batch["rgb_views"].to(device)
+                oh_batch = batch["onehot_info"].to(device)
+                if "blip2_embeds" in batch:
+                    blip2_embeds_batch = batch["blip2_embeds"].to(device)
+                else:
+                    try:
+                        blip2_embeds_batch = prepare_blip2_embeddings(
+                            blip2_model, vis_processors, txt_processors, batch["rgb_views"], mem_prompt, device
+                        )
+                    except:
+                        blip2_model_name = "blip2_t5_instruct"
+                        blip2_model, vis_processors, txt_processors = load_instructblip_model_lavis(blip2_model_name)
+                        blip2_model.to(device)
+                        mem_prompt = generate_mem_prompt(OBJECT_CATEGORIES[train_config['dataset_name']])
+                        blip2_embeds_batch = prepare_blip2_embeddings(
+                            blip2_model, vis_processors, txt_processors, batch["rgb_views"], mem_prompt, device
+                        )
+        
+                mem_condition_batch, _ = mem_generator(blip2_embeds_batch)
+                if model_config["oh_aux_task"]:
+                    logits, mu, logvar, aux_out = map_vae(local_map_batch, mem_condition_batch)
+                else:
+                    logits, mu, logvar = map_vae(local_map_batch, mem_condition_batch)
+                    aux_out = None
+        
+                total_loss_val, recon_loss_val, kl_loss_val, aux_loss_val = compute_vae_loss(
+                    target=local_map_batch,
+                    logits=logits,
+                    mu=mu, logvar=logvar,
+                    class_weights=train_config.get("class_weights", None),
+                    ignore_index=0,
+                    beta=train_config.get("beta", 1.0),
+                    aux_out=aux_out,
+                    aux_target=oh_batch.float(),
+                    aux_weight=train_config.get("aux_weight", 1.0)
+                )
+                test_loss += total_loss_val.item()
+        
+        avg_test_loss = test_loss / len(test_dataloader)
+        print(f"Epoch {epoch+1} average test loss: {avg_test_loss:.4f}")
+        
+        wandb.log({
+            "epoch": epoch + 1,
+            "loss/test_total": avg_test_loss
+        })
         
         # Save checkpoint
         latest_checkpoint_path = f"{MODEL_SAVE_DIR}/vae_checkpoint_latest.pth"
@@ -250,13 +321,13 @@ if __name__ == "__main__":
             "best_loss": best_loss
         }
         
-        if avg_epoch_loss < best_loss:
-            best_loss = avg_epoch_loss
-            best_checkpoint_path = f"{MODEL_SAVE_DIR}/vae_checkpoint_best.pth"
+        if avg_test_loss < best_loss:
+            best_loss = avg_test_loss
+            best_checkpoint_path = os.path.join(MODEL_SAVE_DIR, "vae_checkpoint_best.pth")
             torch.save(checkpoint, best_checkpoint_path)
             meta_data["best_loss"] = best_loss
             meta_data["best_checkpoint"] = best_checkpoint_path
-            meta_data["best_epoch"] = epoch
+            meta_data["best_epoch"] = epoch + 1
             wandb.save(best_checkpoint_path)
         
         with open(meta_file, "w") as f:
