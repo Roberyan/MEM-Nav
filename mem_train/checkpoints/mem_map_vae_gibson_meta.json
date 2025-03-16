@@ -1,1 +1,0 @@
-{"last_epoch": 2, "global_step": 740, "latest_checkpoint": "mem_train/checkpoints/vae_checkpoint_latest.pth", "best_loss": 6.579969139099121, "best_checkpoint": "mem_train/checkpoints/vae_checkpoint_best.pth", "best_epoch": 2}

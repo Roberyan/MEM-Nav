@@ -27,9 +27,11 @@ def compute_kl_loss(mu, logvar):
     kl_loss = -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp(), dim=1)
     return kl_loss.mean()
 
-def compute_aux_loss(aux_out, aux_target):
+def compute_aux_loss(aux_out, aux_target, weight=None):
     aux_target = aux_target.float()
-    return F.binary_cross_entropy_with_logits(aux_out, aux_target)
+    if weight is not None:
+         weight = weight.to(aux_out.device)
+    return F.binary_cross_entropy_with_logits(aux_out, aux_target, weight=weight)
 
 def compute_vae_loss(
     target,       # Ground truth map, shape (B, H, W)
@@ -45,7 +47,7 @@ def compute_vae_loss(
     total_loss = recon_loss + beta * kl_loss
     aux_loss = None
     if aux_out is not None and aux_target is not None:
-        aux_loss = compute_aux_loss(aux_out, aux_target)
+        aux_loss = compute_aux_loss(aux_out, aux_target, class_weights[1:])
         total_loss = total_loss + aux_weight * aux_loss
         
     return total_loss, recon_loss, kl_loss, aux_loss
@@ -61,7 +63,7 @@ train_config = {
     "warm_up_steps": 100,
     "beta": 1.0,
     "aux_weight": 1.0,
-    "class_weights": None # torch.tensor([0.0, 0.1, 0.1] + [1.0] * (18 - 3))
+    "class_weights": torch.tensor([0.0, 0.1, 0.4] + [1.0] * (18 - 3))
 }
 
 model_config = {
@@ -120,9 +122,13 @@ if __name__ == "__main__":
     mem_generator, map_vae = create_MemMapVAE(model_config)
 
     # Initialize wandb.
-    task_name = f"{train_config['model_name']}_{train_config['dataset_name']}"
+    project_name = f"{train_config['model_name']}_{train_config['dataset_name']}"
     start_time = datetime.now().strftime("%Y%m%d_%H%M%S")
-    wandb.init(project=task_name, config=train_config, name=f"{task_name}_{start_time}")
+    task_name = f"weighted_loss_{start_time}"
+    wandb.init(
+        project=project_name, 
+        config=train_config, 
+        name=task_name)
     
     # optimizer = optim.Adam([{"params": map_vae.encoder.parameters(), "lr": 1e-4},{"params": map_vae.decoder.parameters(), "lr": 1e-4},{"params": mem_generator.parameters(), "lr": 1e-5}], weight_decay=1e-5)
     optimizer = optim.AdamW(
@@ -153,7 +159,7 @@ if __name__ == "__main__":
         mem_generator = torch.nn.DataParallel(mem_generator)
         
     # Ensure checkpoints directory exists.
-    MODEL_SAVE_DIR = "mem_train/checkpoints"
+    MODEL_SAVE_DIR = f"mem_train/checkpoints_{project_name}"
     os.makedirs(MODEL_SAVE_DIR, exist_ok=True)
     meta_file = os.path.join(MODEL_SAVE_DIR, f"{task_name}_meta.json")
     
@@ -327,7 +333,7 @@ if __name__ == "__main__":
         })
         
         # Save checkpoint
-        latest_checkpoint_path = f"{MODEL_SAVE_DIR}/vae_checkpoint_latest.pth"
+        latest_checkpoint_path = f"{MODEL_SAVE_DIR}/{task_name}_latest.pth"
         checkpoint = {
             "map_vae_state_dict": map_vae.state_dict(),
             "mem_generator_state_dict": mem_generator.state_dict(),
@@ -350,7 +356,7 @@ if __name__ == "__main__":
         
         if avg_test_total< best_loss:
             best_loss = avg_test_total
-            best_checkpoint_path = os.path.join(MODEL_SAVE_DIR, "vae_checkpoint_best.pth")
+            best_checkpoint_path = os.path.join(MODEL_SAVE_DIR, "{task_name}_best.pth")
             torch.save(checkpoint, best_checkpoint_path)
             meta_data["best_loss"] = best_loss
             meta_data["best_checkpoint"] = best_checkpoint_path

@@ -26,7 +26,6 @@ def custom_collate_fn(batch):
     
     return batch_dict
 
-
 class MEM_build_Dataset(Dataset):
     local_map_size = (65, 65)
     map_resolution = 0.05
