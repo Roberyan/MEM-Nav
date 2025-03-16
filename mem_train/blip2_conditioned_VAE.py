@@ -74,7 +74,8 @@ class TopdownMapHybridEncoder(nn.Module):
         transformer_dim=128, # Dimension for transformer encoder features.
         n_transformer_layers=2,
         n_heads=4,
-        use_cond_input=False
+        use_cond_input=False,
+        dropout_p=0.2  # Dropout probability
     ):
         super(TopdownMapHybridEncoder, self).__init__()
         self.use_cond_input = use_cond_input
@@ -86,8 +87,12 @@ class TopdownMapHybridEncoder(nn.Module):
         # Input: (B, 65, 65, emb_dim) → permute → (B, emb_dim, 65, 65)
         self.conv1 = nn.Conv2d(emb_dim, 32, kernel_size=5, stride=2, padding=2)   # → (B, 32, 33, 33)
         self.bn1   = nn.BatchNorm2d(32)
+        self.dropout1 = nn.Dropout2d(p=dropout_p) 
+        
         self.conv2 = nn.Conv2d(32, 64, kernel_size=3, stride=2, padding=1)          # → (B, 64, 17, 17)
         self.bn2   = nn.BatchNorm2d(64)
+        self.dropout2 = nn.Dropout2d(p=dropout_p)
+        
         self.conv3 = nn.Conv2d(64, 128, kernel_size=3, stride=2, padding=1)         # → (B, 128, 9, 9)
         self.bn3   = nn.BatchNorm2d(128)
         
@@ -97,7 +102,7 @@ class TopdownMapHybridEncoder(nn.Module):
         self.conv_proj = nn.Conv2d(128, transformer_dim, kernel_size=1)  # (B, transformer_dim, 9, 9)
         
         # Transformer encoder to capture global context.
-        encoder_layer = nn.TransformerEncoderLayer(d_model=transformer_dim, nhead=n_heads)
+        encoder_layer = nn.TransformerEncoderLayer(d_model=transformer_dim, nhead=n_heads, dropout=dropout_p)
         self.transformer_encoder = nn.TransformerEncoder(encoder_layer, num_layers=n_transformer_layers)
         
         # After transformer, we mean-pool over the sequence.
@@ -124,7 +129,9 @@ class TopdownMapHybridEncoder(nn.Module):
         
         # Convolutional backbone.
         x = F.leaky_relu(self.bn1(self.conv1(x)))  # → (B, 32, 33, 33)
+        x = self.dropout1(x)
         x = F.leaky_relu(self.bn2(self.conv2(x)))    # → (B, 64, 17, 17)
+        x = self.dropout2(x)
         x = F.leaky_relu(self.bn3(self.conv3(x)))    # → (B, 128, 9, 9)
         
         # Project conv features to transformer dimension.
@@ -155,7 +162,8 @@ class TopdownMapVAEDecoder(nn.Module):
         latent_dim=128, # Dimensionality of the latent vector
         cond_dim=768, # Dimensionality of the condition vector (from MemGenerator).
         num_classes=18, # Number of classes in the topdown map.
-        use_cond_input=True
+        use_cond_input=True,
+        dropout_p=0.2
     ): 
 
         super(TopdownMapVAEDecoder, self).__init__()
@@ -163,9 +171,8 @@ class TopdownMapVAEDecoder(nn.Module):
         
         # For late conditioning, we concatenate the latent vector with the mem_condition.
         fc_input_dim = latent_dim + cond_dim if use_cond_input else latent_dim
-        
-        # Fully connected layer projects the input to a flattened feature map of shape (256, 5, 5).
         self.fc = nn.Linear(fc_input_dim, 256 * 5 * 5)
+        self.dropout_fc = nn.Dropout(p=dropout_p) 
         
         # Transposed convolution layers to gradually upsample the feature map:
         # - From 5x5 → 9x9,
@@ -174,10 +181,16 @@ class TopdownMapVAEDecoder(nn.Module):
         # - From 33x33 → 65x65.
         self.deconv1 = nn.ConvTranspose2d(256, 128, kernel_size=3, stride=2, padding=1, output_padding=0)
         self.bn1 = nn.BatchNorm2d(128)
+        self.dropout1 = nn.Dropout2d(p=dropout_p)
+        
         self.deconv2 = nn.ConvTranspose2d(128, 64, kernel_size=3, stride=2, padding=1, output_padding=0)
         self.bn2 = nn.BatchNorm2d(64)
+        self.dropout2= nn.Dropout2d(p=dropout_p)
+        
         self.deconv3 = nn.ConvTranspose2d(64, 32, kernel_size=3, stride=2, padding=1, output_padding=0)
         self.bn3 = nn.BatchNorm2d(32)
+        self.dropout3 = nn.Dropout2d(p=dropout_p)
+        
         self.deconv4 = nn.ConvTranspose2d(32, num_classes, kernel_size=3, stride=2, padding=1, output_padding=0)
         # The final layer outputs logits (no activation applied).
 
@@ -193,12 +206,17 @@ class TopdownMapVAEDecoder(nn.Module):
         # Project to a flattened feature map.
         x = self.fc(z)  # (B, 256*5*5)
         x = F.leaky_relu(x)
+        x = self.dropout_fc(x)
         x = x.reshape(batch_size, 256, 5, 5)  # Reshape to (B, 256, 5, 5)
         
         # Upsample gradually:
         x = F.leaky_relu(self.bn1(self.deconv1(x)))  # → (B, 128, 9, 9)
+        x = self.dropout1(x)
         x = F.leaky_relu(self.bn2(self.deconv2(x)))    # → (B, 64, 17, 17)
+        x = self.dropout2(x)
         x = F.leaky_relu(self.bn3(self.deconv3(x)))    # → (B, 32, 33, 33)
+        x = self.dropout3(x)
+        
         logits = self.deconv4(x)                       # → (B, num_classes, 65, 65)
         return logits # (B, num_classes, 65, 65)
 
@@ -290,7 +308,8 @@ def create_MemMapVAE(model_config):
         transformer_dim=model_config["transformer_dim"],
         n_transformer_layers=model_config["n_transformer_layers"],
         n_heads=model_config["n_heads"],
-        use_cond_input=model_config["encoder_use_cond_input"]
+        use_cond_input=model_config["encoder_use_cond_input"],
+        dropout_p=model_config["dropout_p"]
     )
     
     # Create the decoder.
@@ -298,7 +317,8 @@ def create_MemMapVAE(model_config):
         latent_dim=model_config["latent_dim"],
         cond_dim=model_config["cond_dim"],
         num_classes=model_config["num_classes"],
-        use_cond_input=model_config["decoder_use_cond_input"]
+        use_cond_input=model_config["decoder_use_cond_input"],
+        dropout_p=model_config["dropout_p"]
     )
     
     # Combine encoder and decoder into the VAE.

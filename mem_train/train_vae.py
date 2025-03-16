@@ -87,6 +87,7 @@ model_config = {
     "mem_generator_token_dim": 768,
     "mem_generator_aggregated_dim": 768,
     "mem_generator_use_attention": True,
+    "dropout_p": 0.2,
     "oh_aux_task": train_config["enable_oh_aux_task"]
 }
 
