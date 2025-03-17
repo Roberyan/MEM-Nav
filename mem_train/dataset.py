@@ -130,21 +130,19 @@ class MEM_build_Dataset(Dataset):
         return sample_dict
 
 # Example usage:
-def test_dataset(root_dir):
+def test_dataset(root_dir="data/semantic_maps/gibson/image_map_pairs"):
     dataset = MEM_build_Dataset(root_dir=root_dir)
     print("Total samples:", len(dataset))
-    cnt = 5
+    total_counts = {}
+    total_pixels = 0
     for sample in tqdm(dataset):
-        h5_file = sample["h5_path"]
-        print("Local map shape:", sample["local_map"].shape)   # e.g., (1, H, W)
-        print("RGB views shape:", sample["rgb_views"].shape)     # e.g., (num_views, C, H, W)
-        # onehot_views is a list of one-hot vectors for each view.
-        print("One-hot view vector shapes:", [oh.shape for oh in sample["onehot_info"]])
-        if "blip2_embeds" in sample:
-            print("blip2_embeds shape:", np.array(sample["blip2_embeds"]).shape)
-        cnt -= 1
-        if cnt<0:
-            break
+        # local_map is assumed to be a torch tensor of shape (H, W) with class indices.
+        local_map = sample["local_map"].numpy()
+        unique_vals, counts = np.unique(local_map, return_counts=True)
+        total_pixels += local_map.size
+        for val, cnt in zip(unique_vals, counts):
+            total_counts[int(val)] = total_counts.get(int(val), 0) + int(cnt)
+    return total_counts, total_pixels
 
 def pre_calculate_embeddings(root_path, nav_task="gibson", blip2_name="blip2_feature_extractor", recalculate_all=False):
     # Recursively search for 'local_data.h5' files.
@@ -256,8 +254,9 @@ def split_train_test(root_dir, test_ratio=0.2):
 
 if __name__ == "__main__":
     # Set your data directory.
-    root_dir = "data/semantic_maps/gibson/image_map_pairs/train"
-    # split_train_test(root_dir, 0.2)
-    pre_calculate_embeddings(root_dir,  blip2_name="blip2_t5_instruct", recalculate_all=False)
+    root_dir = "data/semantic_maps/gibson/image_map_pairs"
     test_dataset(root_dir)
+    # split_train_test(root_dir, 0.2)
+    # train_root_dir = "data/semantic_maps/gibson/image_map_pairs/train"
+    # pre_calculate_embeddings(train_root_dir,  blip2_name="blip2_t5_instruct", recalculate_all=False)
     

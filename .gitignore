@@ -131,4 +131,4 @@ pretrained_models
 visualizations
 tmp
 wandb
-*.pth
+*checkpoint*/
