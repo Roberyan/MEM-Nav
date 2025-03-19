@@ -21,15 +21,18 @@ conda activate onav
 conda install pytorch==1.10.0 torchvision==0.11.0 torchaudio==0.10.0 cudatoolkit=10.2 -c pytorch
 
 # install habitat-sim
-cd dependencies/habitat-sim
+cd dependencies
+git clone https://github.com/Ram81/habitat-sim.git
+cd habitat-sim
 pip install -r requirements.txt
-./build.sh --headless --bullet  # for headless systems
+./build.sh --headless --bullet --with-cuda # for headless systems
+
+cd ../..
 # add habitat-sim to PYTHONPATH, for example add the following line to your .bashrc
-export PYTHONPATH=$PYTHONPATH:/path/to/habitat-sim/
+export PYTHONPATH=$PYTHONPATH:$PWD/dependencies/habitat-sim
 # avoid logging
 export GLOG_minloglevel=2
 export MAGNUM_LOG=quiet
-cd ../..
 
 # install CLIP
 pip install ftfy regex tqdm
