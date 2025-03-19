@@ -14,4 +14,4 @@ moviepy==1.0.3
 numpy==1.24.4
 tensorboard-data-server==0.7.2
 jinja2
-pip install flash-attn==2.6.1
+triton

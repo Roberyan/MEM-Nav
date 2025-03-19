@@ -44,6 +44,7 @@ python setup.py develop --all
 
 # for qwen vl
 pip install qwen-vl-utils[decord]==0.0.8
+pip install flash-attn==2.5 --no-build-isolation # GPU may fail because of too old or too new
 ```
 
 2. Download datasets
