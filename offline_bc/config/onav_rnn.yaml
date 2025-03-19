@@ -1,5 +1,5 @@
 SEED: 2023
-output_dir: 'data/exprs_iros23_release/rnn/trn.all-rgb.rn50.clip-depth-layer.2-hidden.512-history.500-enc.concat-act.linear'
+output_dir: 'checkpoints/rnn/trn.all-rgb.rn50.clip-depth-layer.2-hidden.512-history.500-enc.concat-act.linear'
 resume_file: null
 resume_optimizer: null
 
