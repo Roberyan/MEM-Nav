@@ -15,10 +15,10 @@ Object goal navigation aims to navigate an agent to locations of a given object 
 git clone --recursive onav_rim
 cd onav_rim
 
-conda create -n onav python=3.8
+conda create -n onav python=3.9 -y
 conda activate onav
 
-conda install pytorch==1.10.0 torchvision==0.11.0 torchaudio==0.10.0 cudatoolkit=10.2 -c pytorch
+conda install numpy==1.24 transformers==4.49 peft accelerate pytorch==1.13.0 torchvision torchaudio cudatoolkit=11.8 -c pytorch -c nvidia
 
 # install habitat-sim
 cd dependencies
