@@ -18,7 +18,7 @@ cd onav_rim
 conda create -n onav python=3.9 -y
 conda activate onav
 
-conda install numpy==1.24 transformers==4.49 peft accelerate pytorch==1.13.0 torchvision torchaudio cudatoolkit=11.8 -c pytorch -c nvidia
+conda install numpy==1.24 transformers==4.49 peft accelerate pytorch==1.13.0 torchvision torchaudio cudatoolkit=11.8 -c pytorch -c nvidia -c conda-forge
 
 # install habitat-sim
 cd dependencies
@@ -41,6 +41,9 @@ pip install git+https://github.com/openai/CLIP.git
 # install the codebase
 pip install -r requirements.txt
 python setup.py develop --all
+
+# for qwen vl
+pip install qwen-vl-utils[decord]==0.0.8
 ```
 
 2. Download datasets
