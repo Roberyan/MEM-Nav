@@ -8,12 +8,12 @@ from tqdm import tqdm
 
 import torch
 import torch.nn.functional as F
-# Removed: import torch.distributed as dist
+import torch.distributed as dist
 
 from utils.logger import LOGGER, TB_LOGGER, RunningMeter, add_log_to_file
 from utils.save import ModelSaver, save_training_meta
-from utils.misc import NoOp, set_dropout, set_random_seed, set_cuda  # Removed wrap_model from here for local
-from utils.distributed import all_gather  # Optional: Remove if not needed
+from utils.misc import NoOp, set_dropout, set_random_seed, set_cuda, wrap_model
+from utils.distributed import all_gather
 
 from optim import get_lr_sched
 from optim.misc import build_optimizer
@@ -44,25 +44,19 @@ def main(config):
         config.MODEL.num_ft_views = int(config.DATASET.num_ft_views.split('_')[0])
     else:
         config.MODEL.num_ft_views = config.DATASET.num_ft_views
-        # Set distributed configuration for local training:
-    config.local_rank = -1
-    config.rank = 0
-    config.world_size = 1
-
-    default_gpu = True
-    device = torch.device("cuda")
-    n_gpu = torch.cuda.device_count()
+    default_gpu, n_gpu, device = set_cuda(config)
     # config.freeze()
 
     if default_gpu:
         LOGGER.info(
             'device: {} n_gpu: {}, distributed training: {}'.format(
-                device, n_gpu, False
+                device, n_gpu, bool(config.local_rank != -1)
             )
         )
-
+ 
     seed = config.SEED
-    # For local training, we don't add a rank offset.
+    if config.local_rank != -1:
+        seed += config.rank
     set_random_seed(seed)
 
     # load data training set
@@ -102,16 +96,19 @@ def main(config):
 
     LOGGER.info("Model: nweights %d nparams %d" % (model.num_parameters))
     LOGGER.info("Model: trainable nweights %d nparams %d" % (model.num_trainable_parameters))
+    # for k, v in model.named_parameters():
+    #     if v.requires_grad:
+    #         print(k, v.size())
 
     if config.resume_file:
         checkpoint = torch.load(config.resume_file, map_location=lambda storage, loc: storage)
         LOGGER.info('resume: #params %d' % (len(checkpoint)))
         model.load_state_dict(checkpoint, strict=True)
+        # model.load_state_dict(checkpoint, strict=False)
     
     model.train()
     set_dropout(model, config.MODEL.dropout_rate)
-    # Instead of distributed wrapping, simply send the model to the device.
-    model = model.to(device)
+    model = wrap_model(model, device, config.local_rank)
     global_step = 0
 
     # Prepare optimizer
@@ -124,8 +121,8 @@ def main(config):
         optimizer.load_state_dict(optimizer_state['optimizer'])
         global_step = optimizer_state['step']
 
-    LOGGER.info(f"***** Running training with 1 GPU *****")
-    LOGGER.info("  Batch size = %d", config.train_batch_size)
+    LOGGER.info(f"***** Running training with {config.world_size} GPUs *****")
+    LOGGER.info("  Batch size = %d", config.train_batch_size if config.local_rank == -1 else config.train_batch_size * config.world_size)
     LOGGER.info("  Accumulate steps = %d", config.gradient_accumulation_steps)
     LOGGER.info("  Num steps = %d", config.num_train_steps)
 
@@ -140,6 +137,7 @@ def main(config):
     optimizer.step()
 
     for epoch_id in range(config.num_epochs):
+        # In distributed mode, calling the set_epoch() method at the beginning of each epoch
         trn_pre_epoch(epoch_id)
 
         for step, batch in enumerate(trn_data_loader):
@@ -155,7 +153,7 @@ def main(config):
                 loss = loss['overall']
             
             # backward pass
-            if config.gradient_accumulation_steps > 1:
+            if config.gradient_accumulation_steps > 1: # average loss 
                 loss = loss / config.gradient_accumulation_steps
             loss.backward()
 
@@ -195,19 +193,28 @@ def main(config):
                     param_group['lr'] = lr_this_step
                 TB_LOGGER.add_scalar('lr', lr_this_step, global_step)
 
+                # log loss
+                # NOTE: not gathered across GPUs for efficiency
                 TB_LOGGER.log_scalar_dict({ll.name: ll.val for ll in meteors.values()})
                 TB_LOGGER.step()
 
+                # update model params
                 if config.grad_norm != -1:
                     grad_norm = torch.nn.utils.clip_grad_norm_(
                         model.parameters(), config.grad_norm
                     )
+                    # print(global_step, grad_norm)
+                    # for k, v in model.named_parameters():
+                    #     if v.grad is not None:
+                    #         v = torch.norm(v).data.item()
+                    #         print(k, v)
                     TB_LOGGER.add_scalar('grad_norm', grad_norm, global_step)
                 optimizer.step()
                 optimizer.zero_grad()
                 pbar.update(1)
 
             if global_step % config.log_steps == 0:
+                # monitor training throughput
                 LOGGER.info(f'==============Epoch {epoch_id} Step {global_step}===============')
                 LOGGER.info(', '.join(['%s:%.4f'%(ll.name, ll.val) for ll in meteors.values()]))
                 LOGGER.info('===============================================')
@@ -245,18 +252,19 @@ def validate(model, data_loader, TB_LOGGER=None):
         logits = model(batch, compute_loss=False).data.cpu()
         preds = logits.max(dim=-1)[1]
         labels = batch['demonstration']
+        # print(preds)
+        # print(labels)
         loss = F.cross_entropy(logits.permute(0, 2, 1), labels, reduction='sum', ignore_index=-100)
         val_loss += loss.item()
         n_correct += (preds == labels)[labels != -100].float().sum().item()
         n_total += (labels != -100).float().sum().item()
         n_stop_correct += (preds == labels)[labels == 0].float().sum().item()
         n_stop_total += (labels == 0).float().sum().item()
-    # For local training, no need to gather from other nodes:
-    # val_loss = sum(all_gather(val_loss))
-    # n_correct = sum(all_gather(n_correct))
-    # n_total = sum(all_gather(n_total))
-    # n_stop_correct = sum(all_gather(n_stop_correct))
-    # n_stop_total = sum(all_gather(n_stop_total))
+    val_loss = sum(all_gather(val_loss))
+    n_correct = sum(all_gather(n_correct))
+    n_total = sum(all_gather(n_total))
+    n_stop_correct = sum(all_gather(n_stop_correct))
+    n_stop_total = sum(all_gather(n_stop_total))
 
     val_loss /= n_total
     acc = n_correct / n_total
@@ -268,7 +276,9 @@ def validate(model, data_loader, TB_LOGGER=None):
                 f"loss: {val_loss:.4f}, acc: {acc*100:.2f}, stop_acc: {stop_acc*100:.2f}")
 
     if TB_LOGGER is not None:
-        TB_LOGGER.log_scalar_dict({f'valid/{k}': v for k, v in val_log.items()})
+        TB_LOGGER.log_scalar_dict(
+            {f'valid/{k}': v for k, v in val_log.items()}
+        )
 
     model.train()
 

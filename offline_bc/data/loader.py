@@ -136,7 +136,7 @@ def build_dataloader(dataset, collate_fn, is_train: bool, opts):
         else:
             sampler = SequentialSampler(dataset)
 
-        size = torch.cuda.device_count() if torch.cuda.is_available() else 1
+        size = opts.world_size if torch.cuda.is_available() else 1
         pre_epoch = lambda e: None
 
         # DataParallel: scale the batch size by the number of GPUs
