@@ -688,7 +688,7 @@ if __name__ == "__main__":
         )
     )
 
-    only_gibson = True
+    only_gibson = False
 
     if only_gibson:
         # Select only scenes from the train and val splits

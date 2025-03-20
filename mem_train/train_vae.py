@@ -30,7 +30,7 @@ def compute_kl_loss(mu, logvar):
 def compute_aux_loss(aux_out, aux_target, weight=None):
     aux_target = aux_target.float()
     if weight is not None:
-         weight = weight.to(aux_out.device)
+        weight = weight.to(aux_out.device)
     return F.binary_cross_entropy_with_logits(aux_out, aux_target, weight=weight)
 
 def compute_vae_loss(
@@ -55,7 +55,7 @@ def compute_vae_loss(
 train_config = {
     "model_name": "mem_map_vae",
     "dataset_name": "gibson",
-    "enable_oh_aux_task": True, # if have oh prediction tasks
+    "enable_oh_aux_task": False, # if have oh prediction tasks
     "num_epochs": 40,
     "batch_size": 32,
     "learning_rate": 1e-4,
@@ -64,7 +64,7 @@ train_config = {
     "ignored_class_id": -100, # 0-17 represents the class does not take into account in loss cal
     "beta": 0.7,
     "aux_weight": 0.7,
-    "class_weights": torch.tensor([0.2, 0.2, 0.7] + [1.0] * (18 - 3))
+    "class_weights": torch.tensor([0, 0.3, 0] + [1.0] * (18 - 3))
 }
 
 model_config = {
@@ -107,7 +107,7 @@ if __name__ == "__main__":
         root_dir=IMAGE_MAP_DIR,
         split= "test",
         view_wise_oh=False, # False, one hot existence for the whole local map
-        shuffle_views=True # randomly shuffle views' order
+        shuffle_views=False # randomly shuffle views' order
     )
     
     test_dataloader = DataLoader(
@@ -124,8 +124,7 @@ if __name__ == "__main__":
 
     # Initialize wandb.
     project_name = f"{train_config['model_name']}_{train_config['dataset_name']}"
-    start_time = datetime.now().strftime("%Y%m%d_%H%M%S")
-    task_name = f"weighted_loss_consider_outOfBound{start_time}"
+    task_name = f"weighted_loss_no_wall(recon-kl-aux=1:0.7:0)(0 3 0 10)"
     wandb.init(
         project=project_name, 
         config=train_config, 
