@@ -18,7 +18,8 @@ cd onav_rim
 conda create -n onav python=3.9 -y
 conda activate onav
 
-conda install numpy==1.24 transformers==4.49 peft accelerate pytorch==1.13.0 torchvision torchaudio cudatoolkit=11.8 -c pytorch -c nvidia -c conda-forge
+# transformers, torch env install
+conda install numpy==1.26 transformers==4.49 peft accelerate pytorch==1.13.0 torchvision torchaudio cudatoolkit=11.8 -c pytorch -c nvidia -c conda-forge
 
 # install habitat-sim
 cd dependencies
@@ -45,6 +46,7 @@ python setup.py develop --all
 # for qwen vl
 pip install qwen-vl-utils[decord]==0.0.8
 pip install flash-attn==2.5 --no-build-isolation # GPU may fail because of too old or too new
+pip install --upgrade --no-cache-dir --no-deps unsloth
 ```
 
 2. Download datasets
