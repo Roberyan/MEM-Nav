@@ -10,7 +10,7 @@ from poni.default import get_cfg
 
 assert "ACTIVE_DATASET" in os.environ
 ACTIVE_DATASET = os.environ["ACTIVE_DATASET"]
-SEED = 1234
+SEED = 123
 DATA_ROOT = "data/semantic_maps/{}/semantic_maps".format(ACTIVE_DATASET)
 SAVE_ROOT = "data/semantic_maps/{}/fmm_dists_{}".format(ACTIVE_DATASET, SEED)
 NUM_WORKERS = 16
@@ -33,7 +33,7 @@ def precompute_fmm_dists():
     os.makedirs(SAVE_ROOT, exist_ok=True)
     pool = mp.Pool(NUM_WORKERS)
 
-    for split in ["val", "train"]:
+    for split in ["val", "train", "extra"]:
         print(f"=====> Computing FMM dists for {split} split")
         dataset = SemanticMapDataset(cfg.DATASET, split=split)
         print("--> Saving FMM dists")

@@ -3,7 +3,7 @@ git config user.name "Roberyan"
 git config user.email "boyang.liu@u.nus.edu"
 
 # data share without duplicate
-ln -s /home/marmot/Boyang/MEM-Nav/data /home/marmot/Boyang/Mcomp/MEM-Nav/data 
+ln -s "/media/marmot/One Touch/Boyang/data" data
 # delete views png to save memory
 find data/semantic_maps/gibson/image_map_pairs -type f -name 'Panorama*.png' -delete 
 

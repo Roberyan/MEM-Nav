@@ -38,6 +38,7 @@ SPLIT_SCENES = {
             "Wiconisco",
             "Corozal ",
         ],
+        "extra": ['Chilhowie', 'Hordville', 'Brown', 'Wilseyville', 'Sussex', 'Nuevo', 'Pamelia', 'Waipahu', 'Touhy', 'Micanopy', 'Sugarville', 'Maida', 'Goodyear', 'Clairton', 'Willow', 'Gravelly', 'Sands', 'Duarte', 'Readsboro', 'Churchton', 'Albertville', 'Goodfield', 'Eagan', 'Tyler', 'Browntown', 'Victorville', 'Westfield', 'Silas', 'Goffs', 'Neibert', 'Martinville', 'Shelbiana', 'Rosser', 'Neshkoro', 'Highspire', 'Southfield', 'Pablo', 'Musicks', 'Ancor', 'Broseley', 'Soldier', 'Byers', 'Goodwine', 'Pearce', 'Frankfort', 'Thrall', 'Wyldwood', 'Scioto', 'Tilghmanton', 'Lynchburg', 'Tokeland', 'Parole', 'Athens', 'Hominy', 'Sweatman', 'Kobuk', 'Hortense', 'Timberon', 'Bonnie', 'Winooski', 'Sunshine', 'Adairsville', 'Corozal', 'Marland', 'Irvine', 'Rogue', 'Newcomb', 'Oyens', 'Springerville', 'Emmaus', 'Bonesteel', 'Kemblesville', 'Cottonport', 'Castor', 'Swormville', 'Potterville', 'Bohemia', 'Annona', 'Bautista', 'Arkansaw', 'Hainesburg', 'Stilwell', 'Globe', 'Andover', 'Airport', 'Hildebran', 'Maugansville', 'Swisshome', 'Pittsburg']
     },
     "mp3d": {
         "train": [

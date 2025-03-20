@@ -18,7 +18,7 @@ OUTPUT_MAP_SIZE = 24.0
 MASKING_MODE = "spath"
 MASKING_SHAPE = "square"
 
-SEED = 1234
+SEED = 123
 DATA_ROOT = "data/semantic_maps/{}/semantic_maps".format(DATASET)
 FMM_DISTS_SAVED_ROOT = "data/semantic_maps/{}/fmm_dists_{}".format(
     DATASET, SEED
@@ -41,7 +41,7 @@ def precompute_dataset_for_map(kwargs):
     )
     print(f'====> Pre-computing for map {name}')
     os.makedirs(f'{save_root}/{name}', exist_ok=True)
-    for i in range(n_samples_per_map):
+    for i in tqdm.tqdm(range(n_samples_per_map)):
         input, label = dataset.get_item_by_name(name)
         save_path = f'{save_root}/{name}/sample_{i:05d}.pbz2'
         in_semmap = asnumpy(input) > 0.5 # (N, H, W)
@@ -120,7 +120,7 @@ if __name__ == "__main__":
     parser.add_argument('--map-id', type=int, default=-1)
     parser.add_argument('--map-id-range', type=int, nargs="+", default=None)
     parser.add_argument('--split', type=str, required=True)
-    parser.add_argument('--num-workers', type=int, default=25)
+    parser.add_argument('--num-workers', type=int, default=16)
     args = parser.parse_args()
 
     # Both map-id and map-id-range should not be enabled simultaneously

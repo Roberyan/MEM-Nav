@@ -1,8 +1,7 @@
 #!/bin/bash
 
-EXPT_ROOT=$PWD
+EXPT_ROOT=$PONI_ROOT/tmp
 
-conda activate poni
 
 cd $PONI_ROOT
 
