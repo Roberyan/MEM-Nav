@@ -18,7 +18,7 @@ from blip2_conditioned_VAE import create_MemMapVAE
 from constants import OBJECT_CATEGORIES
 
 # loss calculation
-def compute_recon_loss(logits, target, class_weights=None, ignore_index=0):
+def compute_recon_loss(logits, target, class_weights=None, ignore_index=-100):
     if class_weights is not None:
         class_weights = class_weights.to(logits.device)
     return F.cross_entropy(logits, target, weight=class_weights, ignore_index=ignore_index)
@@ -61,9 +61,10 @@ train_config = {
     "learning_rate": 1e-4,
     "weight_decay": 1e-5,
     "warm_up_steps": 100,
-    "beta": 1.0,
-    "aux_weight": 1.0,
-    "class_weights": torch.tensor([0.0, 0.1, 0.4] + [1.0] * (18 - 3))
+    "ignored_class_id": -100, # 0-17 represents the class does not take into account in loss cal
+    "beta": 0.7,
+    "aux_weight": 0.7,
+    "class_weights": torch.tensor([0.2, 0.2, 0.7] + [1.0] * (18 - 3))
 }
 
 model_config = {
@@ -124,7 +125,7 @@ if __name__ == "__main__":
     # Initialize wandb.
     project_name = f"{train_config['model_name']}_{train_config['dataset_name']}"
     start_time = datetime.now().strftime("%Y%m%d_%H%M%S")
-    task_name = f"weighted_loss_{start_time}"
+    task_name = f"weighted_loss_consider_outOfBound{start_time}"
     wandb.init(
         project=project_name, 
         config=train_config, 
@@ -229,7 +230,7 @@ if __name__ == "__main__":
                 logits=logits,                   # (B, num_classes, 65, 65)
                 mu=mu, logvar=logvar,             # (B, latent_dim)
                 class_weights=train_config.get("class_weights", None),
-                ignore_index=0,                  # Assuming 0 is out-of-bound.
+                ignore_index=train_config.get('ignored_class_id', -100),                  # Assuming 0 is out-of-bound.
                 beta=train_config.get("beta", 1.0),
                 aux_out=aux_out,
                 aux_target=oh_batch.float(),     # (B, 17)
@@ -305,7 +306,7 @@ if __name__ == "__main__":
                     logits=logits,
                     mu=mu, logvar=logvar,
                     class_weights=train_config.get("class_weights", None),
-                    ignore_index=0,
+                    ignore_index=train_config.get('ignored_class_id', -100),
                     beta=train_config.get("beta", 1.0),
                     aux_out=aux_out,
                     aux_target=oh_batch.float(),
@@ -356,7 +357,7 @@ if __name__ == "__main__":
         
         if avg_test_total< best_loss:
             best_loss = avg_test_total
-            best_checkpoint_path = os.path.join(MODEL_SAVE_DIR, "{task_name}_best.pth")
+            best_checkpoint_path = os.path.join(MODEL_SAVE_DIR, f"{task_name}_best.pth")
             torch.save(checkpoint, best_checkpoint_path)
             meta_data["best_loss"] = best_loss
             meta_data["best_checkpoint"] = best_checkpoint_path
