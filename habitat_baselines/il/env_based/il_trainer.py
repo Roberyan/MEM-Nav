@@ -140,6 +140,7 @@ class ILEnvTrainer(BaseRLTrainer):
 
         self.semantic_predictor = None
         if model_config.USE_PRED_SEMANTICS:
+            # current checkpoint has class misalignment with model setting
             self.semantic_predictor = load_rednet(
                 self.device,
                 ckpt=model_config.SEMANTIC_ENCODER.rednet_ckpt,
@@ -543,13 +544,15 @@ class ILEnvTrainer(BaseRLTrainer):
         torch.set_grad_enabled(False)
 
         # Map location CPU is almost always better than mapping to a CUDA device.
-        ckpt_dict = self.load_checkpoint(checkpoint_path, map_location="cpu")
-        if self.config.EVAL_CKPT_FROM_OFFLINEBC:
-            ckpt_dict = convert_offline_model(ckpt_dict)
+        if_hf_llm = getattr(self.config.MODEL, "if_hf_llm", False)
+        if not if_hf_llm:
+            ckpt_dict = self.load_checkpoint(checkpoint_path, map_location="cpu")
+            if self.config.EVAL_CKPT_FROM_OFFLINEBC:
+                ckpt_dict = convert_offline_model(ckpt_dict)
 
         self._make_results_dir(self.config.EVAL.SPLIT)
 
-        if self.config.EVAL.USE_CKPT_CONFIG:
+        if not if_hf_llm and self.config.EVAL.USE_CKPT_CONFIG:
             config = self._setup_eval_config(ckpt_dict["config"])
         else:
             config = self.config.clone()
@@ -582,7 +585,9 @@ class ILEnvTrainer(BaseRLTrainer):
         
         self._setup_actor_critic_agent(il_cfg, config.MODEL, single_env=single_env)
 
-        self.agent.load_state_dict(ckpt_dict["state_dict"], strict=True)    
+        if not if_hf_llm:
+            self.agent.load_state_dict(ckpt_dict["state_dict"], strict=True)    
+        
         self.policy = self.agent.model
         self.policy.eval()
 
@@ -626,6 +631,10 @@ class ILEnvTrainer(BaseRLTrainer):
             )
         elif model_class == 'ObjectNavRNN':
             stats_episodes = self._eval_checkpoint_rnn(
+                config, number_of_eval_episodes, pred_outfile, writer, checkpoint_index
+            )
+        elif if_hf_llm:
+            stats_episodes = self._eval_checkpoint_hf_llm(
                 config, number_of_eval_episodes, pred_outfile, writer, checkpoint_index
             )
         else:
@@ -1120,6 +1129,120 @@ class ILEnvTrainer(BaseRLTrainer):
                 os.makedirs(state_outdir, exist_ok=True)
                 np.save(os.path.join(state_outdir, '%s.npy'%(current_episodes[0].episode_id)), recursive_states[0].data.cpu().numpy())
 
+            episode_stats = {}
+            episode_stats["reward"] = current_episode_reward
+            episode_stats.update(
+                self._extract_scalars_from_info(infos[0])
+            )
+            stats_episodes[
+                (
+                    current_episodes[0].scene_id,
+                    current_episodes[0].episode_id,
+                )
+            ] = episode_stats
+
+            pred_trajectories.update({'episode_id': current_episodes[0].episode_id})
+            write_to_jsonlines(pred_outfile, pred_trajectories)
+            if len(self.config.VIDEO_OPTION) > 0:
+                generate_video(
+                    video_option=self.config.VIDEO_OPTION,
+                    video_dir=self.config.VIDEO_DIR,
+                    images=rgb_frames,
+                    episode_id=current_episodes[0].episode_id,
+                    checkpoint_idx=checkpoint_index,
+                    metrics=self._extract_scalars_from_info(infos[0]),
+                    tb_writer=writer,
+                )
+
+        return stats_episodes
+
+    def _eval_checkpoint_hf_llm(
+        self, config, number_of_eval_episodes, pred_outfile, writer, checkpoint_index
+    ):
+        stats_episodes: Dict[
+            Any, Any
+        ] = {}  # dict of dicts that stores stats per episode
+
+        model_config = self.config.MODEL
+        gpscompass_noise_type = getattr(self.config.MODEL, 'gpscompass_noise_type', None)
+        for _ in tqdm.trange(number_of_eval_episodes):
+            pred_trajectories = {
+                'actions': [], 'infos': []
+            }
+            rgb_frames = []
+            
+            observations = self.envs.reset()
+            current_episodes = self.envs.current_episodes()
+
+            batch = batch_obs(observations, device=self.device)  # 'rgb', 'semantic', 'depth', 'objectgoal', 'compass', 'gps'
+            batch = process_batch_gps_compass(batch, gpscompass_noise_type)
+            batch = apply_obs_transforms_batch(batch, self.obs_transforms)
+            if self.semantic_predictor is not None:
+                batch["semantic"] = self.semantic_predictor(batch["rgb"], batch["depth"])
+                if self.config.MODEL.SEMANTIC_ENCODER.is_thda:
+                    batch["semantic"] = batch["semantic"] - 1
+
+            recursive_states = None
+            prev_actions = [] * self.envs.num_envs
+            # initialize at the begning of each episode
+            last_gps, last_compass = observations[0]['gps'], observations[0]['compass']
+            action_masks = torch.zeros(self.envs.num_envs, 6).bool().to(self.device)
+            current_episode_reward = 0
+
+            done = False
+            is_collide = False
+            nav_step = 0
+            while not done:
+                if len(self.config.VIDEO_OPTION) > 0:
+                    frame = observations_to_image(
+                        {"rgb": batch["rgb"][0]}, {}
+                    )
+                    rgb_frames.append(frame)
+
+                actions, recursive_states = self.policy(batch, recursive_states, prev_actions, nav_step)
+
+                print(actions)
+                step_data = actions
+                
+                outputs = self.envs.step(step_data)
+                observations, rewards_l, dones, infos =  [
+                    x for x in zip(*outputs)
+                ]
+                done = dones[0]
+                current_episode_reward += rewards_l[0]
+
+                if (all(np.isclose(observations[0]['gps'],  last_gps))) and \
+                   (all(np.isclose(observations[0]['compass'], last_compass))) and \
+                   (step_data[0] in ["MOVE_FORWARD", "TURN_LEFT", "TURN_RIGHT"]):
+                    is_collide = True
+                else:
+                    is_collide = False
+                # print(nav_step, is_collide, infos[0]['collisions'])
+                # print(last_gps, last_compass)
+                # print(observations[0]['gps'], observations[0]['compass'])
+                last_gps = observations[0]['gps']
+                last_compass = observations[0]['compass']
+
+                pred_trajectories['actions'].append(step_data[0])
+                pred_trajectories['infos'].append(infos[0])
+
+                if config.MODEL.enc_collide_steps or (not is_collide):
+                    batch = batch_obs(observations, device=self.device)
+                    batch = process_batch_gps_compass(batch, gpscompass_noise_type)
+                    batch = apply_obs_transforms_batch(batch, self.obs_transforms)
+                    if self.semantic_predictor is not None:
+                        batch["semantic"] = self.semantic_predictor(batch["rgb"], batch["depth"])
+                        if self.config.MODEL.SEMANTIC_ENCODER.is_thda:
+                            batch["semantic"] = batch["semantic"] - 1
+                    
+                    nav_step += 1
+                    prev_actions.append((actions[0], is_collide))
+
+            # print(current_episodes[0].object_category)
+            # print(pred_trajectories['actions'])
+            # print(pred_trajectories['infos'][0])
+            # print(infos[0])
+            # print()
             episode_stats = {}
             episode_stats["reward"] = current_episode_reward
             episode_stats.update(

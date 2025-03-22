@@ -17,6 +17,7 @@ from habitat_baselines.il.env_based.policy.onav_imap_models import (
 )
 from offline_bc.models.onav_base import ClsPrediction
 
+from habitat_baselines.il.env_based.policy.hf_llm_models import ObjectNavHFVLM
 
 model_factory = {
     'ObjectNavRNN': ObjectNavRNN,
@@ -30,12 +31,20 @@ class ObjectNavILPolicy(Policy):
         self, observation_space: Space, action_space: Space, model_config: Config,
         no_critic=True
     ):
-        model_class = model_factory[model_config.model_class]
-        model = model_class(
-            observation_space=observation_space,
-            model_config=model_config,
-            num_actions=action_space.n,
-        )
+        if getattr(model_config, "if_hf_llm", False):
+            model_class = model_config.model_class
+            model = ObjectNavHFVLM(
+                observation_space=observation_space,
+                model_config=model_config,
+                num_actions=action_space.n,
+            )
+        else:
+            model_class = model_factory[model_config.model_class]
+            model = model_class(
+                observation_space=observation_space,
+                model_config=model_config,
+                num_actions=action_space.n,
+            )
 
         if model_config.action_clf_class == 'ClsPrediction':
             clf_net = ClsPrediction(model.output_size, action_space.n)

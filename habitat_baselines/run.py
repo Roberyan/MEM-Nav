@@ -49,8 +49,8 @@ def multiprocess_evaluate(config, num_gpus):
         return splited_scenes
 
     node_rank = int(os.environ.get('SLURM_NODEID', 0))
-    num_gpus_per_node = int(os.environ.get('SLURM_NTASKS_PER_NODE', 1))
-    cur_gpu_id = int(os.environ.get('SLURM_LOCALID', 0))
+    num_gpus_per_node = int(os.environ.get('SLURM_NTASKS_PER_NODE', torch.cuda.device_count()))
+    cur_gpu_id = int(os.environ.get('SLURM_LOCALID', torch.cuda.current_device()))
     scenes = even_split_scenes(scenes, num_gpus)[cur_gpu_id + node_rank * num_gpus_per_node]
 
     num_process_per_gpu = config.NUM_PROCESSES
@@ -125,7 +125,7 @@ def execute_exp(config: Config, run_type: str) -> None:
             print(f'eval result dir {result_file} already exists')
             return
         mp.set_start_method('spawn')
-        multiprocess_evaluate(config, int(os.environ.get('SLURM_NTASKS', 1)))
+        multiprocess_evaluate(config, int(os.environ.get('SLURM_NTASKS', torch.cuda.device_count())))
 
         # trainer.eval()
 

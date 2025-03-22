@@ -38,9 +38,11 @@ class Policy(nn.Module, metaclass=abc.ABCMeta):
         features, rnn_hidden_states = self.net(
             *x, **kwargs
         )
-        distribution = self.action_distribution(features)
-
-        return distribution.logits, rnn_hidden_states
+        if isinstance(features, torch.Tensor):
+            distribution = self.action_distribution(features)
+            return distribution.logits, rnn_hidden_states
+        else:
+            return features, rnn_hidden_states
 
     def act(
         self,
