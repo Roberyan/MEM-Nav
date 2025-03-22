@@ -13,7 +13,7 @@ evalsplit=val
 hf_llm=Qwen/Qwen2.5-VL-3B-Instruct
 outdir=experiment_results/hf_llm_qwen
 result_dir=${outdir}/eval_res
-lora_checkpoint=${outdir}/ckpts
+lora_checkpoint=""
 
 python_bin=$(which python)
 

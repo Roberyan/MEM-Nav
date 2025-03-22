@@ -1,0 +1,1 @@
+bash run_scripts_local/onav_eval_imap_transformer.sh /home/marmot/Boyang/MEM-Nav/experiment_results/imap_single_transformer/trn.all-imap.3.pos.sgtype-rgb.rn50.clip-depth-layer.4-hidden.512-history.200-enc.concat-act.linear-attn.pos 54426

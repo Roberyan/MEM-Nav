@@ -1,5 +1,5 @@
 SEED: 2023
-output_dir: 'checkpoints/imap_single_transformer/test_train'
+output_dir: 'experiment_results/imap_single_transformer/test_train'
 resume_file: null
 resume_optimizer: null
 

@@ -1186,7 +1186,6 @@ class ILEnvTrainer(BaseRLTrainer):
             prev_actions = [] * self.envs.num_envs
             # initialize at the begning of each episode
             last_gps, last_compass = observations[0]['gps'], observations[0]['compass']
-            action_masks = torch.zeros(self.envs.num_envs, 6).bool().to(self.device)
             current_episode_reward = 0
 
             done = False
@@ -1226,17 +1225,13 @@ class ILEnvTrainer(BaseRLTrainer):
                 pred_trajectories['actions'].append(step_data[0])
                 pred_trajectories['infos'].append(infos[0])
 
-                if config.MODEL.enc_collide_steps or (not is_collide):
+                if not is_collide:
                     batch = batch_obs(observations, device=self.device)
                     batch = process_batch_gps_compass(batch, gpscompass_noise_type)
                     batch = apply_obs_transforms_batch(batch, self.obs_transforms)
-                    if self.semantic_predictor is not None:
-                        batch["semantic"] = self.semantic_predictor(batch["rgb"], batch["depth"])
-                        if self.config.MODEL.SEMANTIC_ENCODER.is_thda:
-                            batch["semantic"] = batch["semantic"] - 1
-                    
-                    nav_step += 1
-                    prev_actions.append((actions[0], is_collide))
+
+                nav_step += 1
+                prev_actions.append((actions[0], is_collide))
 
             # print(current_episodes[0].object_category)
             # print(pred_trajectories['actions'])

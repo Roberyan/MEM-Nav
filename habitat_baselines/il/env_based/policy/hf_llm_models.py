@@ -29,7 +29,7 @@ class ObjectNavHFVLM(ObjectNavBase):
     system_message="""You are an intelligent indoor navigation robot. Your task is finding a given goal object as soon as possible. You only know what you see in the current image, and you must reason about where to go next."""
     
     action_info="""Allowed actions (choose exactly one, output only the action name):
-    'LOOK_DOWN', 'LOOK_UP', 'MOVE_FORWARD', 'STOP', 'TURN_LEFT', 'TURN_RIGHT'{previous_action_state}Do not STOP until you manage to find and around current goal: {goal_object}. """
+    'LOOK_DOWN', 'LOOK_UP', 'MOVE_FORWARD', 'STOP', 'TURN_LEFT', 'TURN_RIGHT'"""
     
     hint_info_no_mem="""Here are some suggestions to help you make the best decision:
     (1) You can not move without navigable areas, confirm whether there are visible floor area in the image, avoid getting close to obstacles. If there is no navigable areas in image, you should change your direction first.
@@ -63,7 +63,7 @@ class ObjectNavHFVLM(ObjectNavBase):
         previous_action_state = "\n"
         if len(former_action) and former_action[-1][1]:
             previous_action_state=f"\nYour former action {former_action[-1][0]} leads to collision.\n"
-        nav_prompt = f"{self.action_info.format(goal_object=object_goal, previous_action_state=previous_action_state)}\n{self.hint_info_no_mem.format(goal_object=object_goal)}\nYour action choice: "
+        nav_prompt = f"{self.action_info.format(goal_object=object_goal, previous_action_state=previous_action_state)}\n{self.hint_info_no_mem.format(goal_object=object_goal)}{previous_action_state}DO NOT STOP until you find current goal: {object_goal}.\nYour action choice: "
         
         messages = [
             {
