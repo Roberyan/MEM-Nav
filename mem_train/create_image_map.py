@@ -218,7 +218,7 @@ if __name__ == "__main__":
                     sample_save_dir = os.path.join(tmp_scene_save_dir, f"location_{sampled_pos}_direction_{sampled_angle}")
                     os.makedirs(sample_save_dir, exist_ok=True)
 
-                    global_topdown_map = visualize_sem_map(map_semantic, dset=dset,selected_point=sampled_pos, selected_angle=sampled_angle)
+                    global_topdown_map = visualize_sem_map(map_semantic, dset=dset, selected_point=sampled_pos, selected_angle=sampled_angle)
                     local_topdown_map = visualize_sem_map(local_map,  dset=dset, selected_point=[local_map_range//2]*2, selected_angle=sampled_angle, with_info=False, with_palette=False)
                     cv2.imwrite(f"{sample_save_dir}/global_topdown_map.png", global_topdown_map)
                     cv2.imwrite(f"{sample_save_dir}/local_topdown_map.png", local_topdown_map)

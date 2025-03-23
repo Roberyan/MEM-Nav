@@ -195,11 +195,11 @@ if __name__ == "__main__":
             local_map_batch = batch["local_map"].to(device)  # (B, 65, 65)
             rgb_views_batch = batch["rgb_views"].to(device)    # (B, 4, 3, 1024, 1024)
             oh_batch = batch["onehot_info"].to(device)         # (B, 17) or (B, 4, 17)
-            if "blip2_embeds" in batch:
-                blip2_embeds_batch = batch["blip2_embeds"].to(device)  # (B, 4, 32, 768)
+            if "rgb_embeds" in batch:
+                rgb_embeds_batch = batch["rgb_embeds"].to(device)  # (B, 4, 32, 768)
             else:
                 try:
-                    blip2_embeds_batch = prepare_blip2_embeddings(
+                    rgb_embeds_batch = prepare_blip2_embeddings(
                         blip2_model, 
                         vis_processors, 
                         txt_processors, 
@@ -214,7 +214,7 @@ if __name__ == "__main__":
                     mem_prompt = generate_mem_prompt(OBJECT_CATEGORIES[train_config['dataset_name']])
 
             # Generate the mem_condition using the MemGenerator.
-            mem_condition_batch, _ = mem_generator(blip2_embeds_batch)  # shape: (B, cond_dim)
+            mem_condition_batch, _ = mem_generator(rgb_embeds_batch)  # shape: (B, cond_dim)
             
             # Forward pass through the VAE.
             if model_config["oh_aux_task"] :
@@ -277,11 +277,11 @@ if __name__ == "__main__":
                 local_map_batch = batch["local_map"].to(device)
                 rgb_views_batch = batch["rgb_views"].to(device)
                 oh_batch = batch["onehot_info"].to(device)
-                if "blip2_embeds" in batch:
-                    blip2_embeds_batch = batch["blip2_embeds"].to(device)
+                if "rgb_embeds" in batch:
+                    rgb_embeds_batch = batch["rgb_embeds"].to(device)
                 else:
                     try:
-                        blip2_embeds_batch = prepare_blip2_embeddings(
+                        rgb_embeds_batch = prepare_blip2_embeddings(
                             blip2_model, vis_processors, txt_processors, batch["rgb_views"], mem_prompt, device
                         )
                     except:
@@ -289,11 +289,11 @@ if __name__ == "__main__":
                         blip2_model, vis_processors, txt_processors = load_instructblip_model_lavis(blip2_model_name)
                         blip2_model.to(device)
                         mem_prompt = generate_mem_prompt(OBJECT_CATEGORIES[train_config['dataset_name']])
-                        blip2_embeds_batch = prepare_blip2_embeddings(
+                        rgb_embeds_batch = prepare_blip2_embeddings(
                             blip2_model, vis_processors, txt_processors, batch["rgb_views"], mem_prompt, device
                         )
         
-                mem_condition_batch, _ = mem_generator(blip2_embeds_batch)
+                mem_condition_batch, _ = mem_generator(rgb_embeds_batch)
                 if model_config["oh_aux_task"]:
                     logits, mu, logvar, aux_out = map_vae(local_map_batch, mem_condition_batch)
                 else:

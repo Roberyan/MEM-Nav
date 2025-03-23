@@ -360,8 +360,8 @@ if __name__ == "__main__":
     batch_size = 2
     local_map_batch = torch.randint(0, config["num_classes"], (batch_size, 65, 65))  # (B, 65, 65)
     rgb_views_batch = torch.randn(batch_size, 4, 3, 1024, 1024)
-    blip2_embeds_batch = prepare_blip2_embeddings(blip2_model, vis_processors, txt_processors, rgb_views_batch, mem_prompt)
-    mem_condition_batch, _ = mem_generator(blip2_embeds_batch)  # (B, 768)
+    rgb_embeds_batch = prepare_blip2_embeddings(blip2_model, vis_processors, txt_processors, rgb_views_batch, mem_prompt)
+    mem_condition_batch, _ = mem_generator(rgb_embeds_batch)  # (B, 768)
 
     # Forward pass.
     logits, mu, logvar = vae(local_map_batch, mem_condition_batch)

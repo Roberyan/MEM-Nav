@@ -226,9 +226,12 @@ def visualize_sem_map(sem_map, dset='gibson', selected_point=None, selected_angl
     Returns:
         An RGB image (numpy array) with overlays drawn on top of the original map.
     """
-    # Convert semantic map to an RGB image using the Gibson palette.
     c_map = sem_map.astype(np.int32)
-    color_palette = [int(x * 255.0) for x in GIBSON_COLOR_PALETTE]
+    if dset == 'gibson':
+        color_palette = [int(x * 255.0) for x in GIBSON_COLOR_PALETTE]
+    elif dset == 'mp3d':
+        color_palette = [int(x * 255.0) for x in MP3D_COLOR_PALETTE]
+        
     semantic_pil = Image.new("P", (c_map.shape[1], c_map.shape[0]))
     semantic_pil.putpalette(color_palette)
     semantic_pil.putdata((c_map.flatten() % 40).astype(np.uint8))
@@ -313,7 +316,7 @@ def visualize_sem_map(sem_map, dset='gibson', selected_point=None, selected_angl
     
     return semantic_img
 
-# --- smoothing the sem map ---
+# --- compare sem map ---
 def show_semmap_compare(sem_map, smooth_map, dset='gibson'):
     fig, axes = plt.subplots(1, 2, figsize=(12, 6))
     # Display the original semantic map
@@ -328,3 +331,20 @@ def show_semmap_compare(sem_map, smooth_map, dset='gibson'):
 
     plt.tight_layout()
     plt.show()
+
+# rotate the map
+def rotate_local_map(local_map: np.ndarray, yaw_deg: float) -> np.ndarray:
+    """
+    Rotate a (H,W) semantic map so that the agent’s heading points upward.
+    yaw_deg = agent’s world heading in degrees (0 = right).
+    """
+    H, W = local_map.shape
+    center = (W/2, H/2)
+    M = cv2.getRotationMatrix2D(center, yaw_deg, 1.0)
+    return cv2.warpAffine(
+        local_map,
+        M,
+        (W, H),
+        flags=cv2.INTER_NEAREST,
+        borderValue=0  # treat out‑of‑bounds as background
+    )
