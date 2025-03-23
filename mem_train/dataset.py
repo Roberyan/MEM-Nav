@@ -7,7 +7,8 @@ from topdown_map_utils import (
     convert_maps_to_oh, 
     generate_map_view_mask, 
     visualize_sem_map,
-    rotate_local_map
+    rotate_local_map,
+    smooth_semantic_map
 )
 from tqdm import tqdm
 import re
@@ -54,7 +55,8 @@ class MEM_build_Dataset(Dataset):
         split= None,
         view_wise_oh=False, 
         shuffle_views=False,
-        rotate_map=True
+        rotate_map=True,
+        smooth_map=True
     ):
         self.dataset=dataset
         self.root_dir = os.path.join(root_dir, dataset, "image_map_pairs")
@@ -67,6 +69,7 @@ class MEM_build_Dataset(Dataset):
         self.shuffle_views = shuffle_views
         self.view_wise_oh = view_wise_oh
         self.rotate_map = rotate_map # make current map align with current view
+        self.smooth_map = smooth_map
         # Recursively search for 'local_data.h5' files.
         for dirpath, _, filenames in os.walk(self.root_dir):
             if "local_data.h5" in filenames:
@@ -122,7 +125,6 @@ class MEM_build_Dataset(Dataset):
                 depth_embeds = None 
 
         # # for debugging
-        # self.visualize_local_map(local_map, map_dir, "/home/marmot/Boyang/MEM-Nav/tmp/dataset_map.png")
         # self.visualize_surrounding_views(start_angles=map_dir,rgb_views=rgb_views,depth_views=depth_views,save_path="/home/marmot/Boyang/MEM-Nav/tmp/dataset_views.png")
         
         if self.view_wise_oh:
@@ -154,10 +156,22 @@ class MEM_build_Dataset(Dataset):
             if depth_embeds is not None:
                 depth_embeds = torch.roll(depth_embeds, shifts=shift, dims=0)
         
+        # Debugging, compare the map
+        # self.visualize_local_map(local_map, map_dir, "/home/marmot/Boyang/MEM-Nav/tmp/dataset_map.png")
+        # self.visualize_local_map(rotate_local_map(local_map, map_dir+90), -90, "/home/marmot/Boyang/MEM-Nav/tmp/dataset_map_rotated.png")
+        # self.visualize_local_map(smooth_semantic_map(local_map, min_region_size= 4, max_hole_size= 4, majority_kernel= 3), map_dir, "/home/marmot/Boyang/MEM-Nav/tmp/dataset_map_smoothed.png")
+        
+        if self.smooth_map:
+            local_map = smooth_semantic_map(
+                local_map,
+                min_region_size= 3,
+                max_hole_size= 3,
+                majority_kernel= 1
+            )
+
         if self.rotate_map:
             local_map = rotate_local_map(local_map, map_dir+90) # current view as up
-            # self.visualize_local_map(rotated_local_map, -90, "/home/marmot/Boyang/MEM-Nav/tmp/dataset_map_rotated_to_view.png") # visualization take right as 0
-        # Convert local_map to torch tensor; assume it's a 2D map.
+
         local_map_tensor = torch.from_numpy(local_map).long()
         
         sample_dict = {

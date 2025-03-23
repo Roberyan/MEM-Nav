@@ -3,7 +3,8 @@ from PIL import Image, ImageFont, ImageDraw
 import cv2
 from matplotlib import font_manager
 import matplotlib.pyplot as plt
-
+from scipy.ndimage import generic_filter
+from skimage.morphology import remove_small_objects, remove_small_holes, closing, square
 from constants import (
     GIBSON_CATEGORIES,
     GIBSON_COLOR_PALETTE,
@@ -347,4 +348,32 @@ def rotate_local_map(local_map: np.ndarray, yaw_deg: float) -> np.ndarray:
         (W, H),
         flags=cv2.INTER_NEAREST,
         borderValue=0  # treat out‑of‑bounds as background
+    )
+# smoothing the map
+def smooth_semantic_map(
+    local_map: np.ndarray,
+    min_region_size: int = 4,
+    max_hole_size: int = 4,
+    majority_kernel: int = 3) -> np.ndarray:
+    """
+    1) Remove islands < min_region_size px and fill holes < max_hole_size px per class
+    2) Apply 3×3 majority filter to eliminate boundary noise
+    """
+    cleaned = np.zeros_like(local_map)
+    for cls in np.unique(local_map):
+        mask = (local_map == cls)
+        mask = remove_small_objects(mask, min_region_size)
+        mask = remove_small_holes(mask, max_hole_size)
+        mask = closing(mask, square(3))
+        cleaned[mask] = cls
+
+    def mode_filter(window):
+        vals, counts = np.unique(window, return_counts=True)
+        return vals[np.argmax(counts)]
+
+    return generic_filter(
+        cleaned,
+        function=mode_filter,
+        size=(majority_kernel, majority_kernel),
+        mode="nearest"
     )
