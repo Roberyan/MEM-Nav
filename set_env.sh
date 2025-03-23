@@ -15,7 +15,7 @@ cd $PONI_ROOT
 # build semantic map
 ACTIVE_DATASET="gibson" python mem_train/create_semantic_maps.py
 # sample from sim to extract local views map pairs
-python mem_train/create_image_map.py
+pACTIVE_DATASET="mp3d" python mem_train/create_image_map.py
 # precompute blip2 embeddings, currently just in dataset.py, need to arrange later
 python mem_train/dataset.py 
 

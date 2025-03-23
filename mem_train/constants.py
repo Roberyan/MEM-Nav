@@ -1,3 +1,4 @@
+import numpy as np
 SPLIT_SCENES = {
     "gibson": {
         "train": [
@@ -201,11 +202,101 @@ GIBSON_LEGEND_PALETTE = [
     *GIBSON_OBJECT_COLORS,
 ]
 
+MP3D_CATEGORIES = ["out-of-bounds"] + OBJECT_CATEGORIES["mp3d"]
+MP3D_OBJECT_COLORS = []  # Excludes 'out-of-bounds', 'floor', and 'wall'
+# Modified version of d3_40_colors_rgb from habitat_sim.
+d3_40_colors_rgb = np.array(
+    [
+        [31, 119, 180],
+        [174, 199, 232],
+        [255, 127, 14],
+        [255, 187, 120],
+        [44, 160, 44],
+        [152, 223, 138],
+        [206, 219, 156],
+        [140, 109, 49],
+        [148, 103, 189],
+        [197, 176, 213],
+        [140, 86, 75],
+        [196, 156, 148],
+        [227, 119, 194],
+        [247, 182, 210],
+        [127, 127, 127],
+        [199, 199, 199],
+        [188, 189, 34],
+        [219, 219, 141],
+        [23, 190, 207],
+        [158, 218, 229],
+        [57, 59, 121],
+        [82, 84, 163],
+        [107, 110, 207],
+        [156, 158, 222],
+        [99, 121, 57],
+        [140, 162, 82],
+        [181, 207, 107],
+        [214, 39, 40],
+        [255, 152, 150],
+        [189, 158, 57],
+        [231, 186, 82],
+        [231, 203, 148],
+        [132, 60, 57],
+        [173, 73, 74],
+        [214, 97, 107],
+        [231, 150, 156],
+        [123, 65, 115],
+        [165, 81, 148],
+        [206, 109, 189],
+        [222, 158, 214],
+    ],
+    dtype=np.uint8,
+)
+for color in d3_40_colors_rgb[: len(MP3D_CATEGORIES) - 3]:
+    color = (color.astype(np.float32) / 255.0).tolist()
+    MP3D_OBJECT_COLORS.append(color)
+MP3D_COLOR_PALETTE = [
+    1.0,
+    1.0,
+    1.0,  # Out-of-bounds
+    0.9,
+    0.9,
+    0.9,  # Floor
+    0.3,
+    0.3,
+    0.3,  # Wall
+    *[oci for oc in MP3D_OBJECT_COLORS for oci in oc],
+]
+MP3D_LEGEND_PALETTE = [
+    (1.0, 1.0, 1.0),  # Out-of-bounds
+    (0.9, 0.9, 0.9),  # Floor
+    (0.3, 0.3, 0.3),  # Wall
+    *MP3D_OBJECT_COLORS,
+]
+
+category_to_mp3d_category_id = {
+    'chair': 3,
+    'table': 5,
+    'picture': 6,
+    'cabinet': 7,
+    'cushion': 8,
+    'sofa': 10,
+    'bed': 11,
+    'chest_of_drawers': 13,
+    'plant': 14,
+    'sink': 15,
+    'toilet': 18,
+    'stool': 19,
+    'towel': 20,
+    'tv_monitor': 22,
+    'shower': 23,
+    'bathtub': 25,
+    'counter': 26,
+    'fireplace': 27,
+    'gym_equipment': 33,
+    'seating': 34,
+    'clothes': 38
+}
+
+
 CAT_OFFSET = 1
 FLOOR_ID = 1 # sem id, indicating navigatable are
 MIN_OBJECTS_THRESH = 4
-
-SCENE_DIR = "data/scene_datasets/gibson_semantic"
-SCENE_CONFIG = "data/scene_datasets/gibson_semantic/gibson_semantic.scene_dataset_config.json"
-SEM_MAP_SAVE_ROOT = "data/semantic_maps/gibson/semantic_maps" 
-SCENE_BOUNDS_DIR = "data/semantic_maps/gibson/scene_boundaries"

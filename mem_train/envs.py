@@ -60,24 +60,38 @@ def make_cfg(settings):
         "turn_right": habitat_sim.agent.ActionSpec(
             "turn_right", habitat_sim.agent.ActuationSpec(amount=30.0)  # 30.0
         ),
+        "look_up":habitat_sim.ActionSpec(
+            "look_up", habitat_sim.ActuationSpec(amount=30.0),
+        ),
+        "look_down":habitat_sim.ActionSpec(
+            "look_down", habitat_sim.ActuationSpec(amount=30.0),
+        ),
     }
 
     return habitat_sim.Configuration(sim_cfg, [agent_cfg])
 
 
-def init_sim(test_scene):
+def init_sim(
+    test_scene,
+    use_rgb_sensor=True,
+    use_depth_sensor=True,
+    use_sem_sensor=True,
+    image_width=448,
+    image_height=448,
+    hfov=79
+):
     """Initialize the simulator with a test scene."""
-    rgb_sensor = True  # @param {type:"boolean"}
-    depth_sensor = True  # @param {type:"boolean"}
-    semantic_sensor = True  # @param {type:"boolean"}
+    rgb_sensor = use_rgb_sensor  # @param {type:"boolean"}
+    depth_sensor = use_depth_sensor  # @param {type:"boolean"}
+    semantic_sensor = use_sem_sensor  # @param {type:"boolean"}
 
     sim_settings = {
-        "width": 1024,  # Spatial resolution of the observations
-        "height": 1024,
+        "width": image_width,  # Spatial resolution of the observations
+        "height": image_height,
         "scene": test_scene,  # Scene path
         "default_agent": 0,
         "sensor_height": 0.88,  # Height of sensors in meters
-        "hfov": 79,  # flied of view
+        "hfov": hfov,  # flied of view
         "color_sensor": rgb_sensor,  # RGB sensor
         "depth_sensor": depth_sensor,  # Depth sensor
         "semantic_sensor": semantic_sensor,  # Semantic sensor

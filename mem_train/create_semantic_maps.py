@@ -688,10 +688,9 @@ if __name__ == "__main__":
         )
     )
 
-    only_gibson = False
+    only_registered = False
 
-    if only_gibson:
-        # Select only scenes from the train and val splits
+    if only_registered: # Select only scenes in the train and val splits
         valid_scenes = (
             SPLIT_SCENES[ACTIVE_DATASET]["train"] + SPLIT_SCENES[ACTIVE_DATASET]["val"]
         )

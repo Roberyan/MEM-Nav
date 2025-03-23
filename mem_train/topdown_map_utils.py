@@ -8,6 +8,9 @@ from constants import (
     GIBSON_CATEGORIES,
     GIBSON_COLOR_PALETTE,
     GIBSON_LEGEND_PALETTE,
+    MP3D_CATEGORIES,
+    MP3D_COLOR_PALETTE,
+    MP3D_LEGEND_PALETTE,
     NUM_OBJECT_CATEGORIES,
     CAT_OFFSET,
 )
@@ -58,7 +61,7 @@ def convert_maps_to_oh(semmap, dset="gibson"): # convert sem map to one hot, ski
     ncat = NUM_OBJECT_CATEGORIES[dset]
     semmap_oh = np.zeros((ncat, *semmap.shape), dtype=np.float32)
     for i in range(0, ncat):
-        semmap_oh[i] = (semmap == i + CAT_OFFSET).astype(np.float32)
+        semmap_oh[i] = (semmap == i + CAT_OFFSET).astype(np.float32) # no out-of-bound
     return semmap_oh
 
 # benefit sampling
@@ -162,7 +165,14 @@ def extract_sem_map_patch(map_semantic, map_pos, window_size=5, pad_value=0):
     return padded_map[y_padded - half_window : y_padded + half_window + 1, x_padded - half_window : x_padded + half_window + 1]
 
 
-def get_palette_image():
+def get_palette_image(dset="gibson"):
+    if dset == "gibson":
+        dset_catgories = GIBSON_CATEGORIES
+        dset_lengend_palette = GIBSON_LEGEND_PALETTE
+    elif dset == "mp3d":
+        dset_catgories = MP3D_CATEGORIES
+        dset_lengend_palette = MP3D_LEGEND_PALETTE
+    
     # Find a font file
     mpl_font = font_manager.FontProperties(family="sans-serif", weight="bold")
     file = font_manager.findfont(mpl_font)
@@ -174,13 +184,13 @@ def get_palette_image():
     text_width = 150
 
     image = np.zeros(
-        (cat_size * len(GIBSON_CATEGORIES), cat_size + buf_size + text_width, 3),
+        (cat_size * len(dset_catgories), cat_size + buf_size + text_width, 3),
         dtype=np.uint8,
     )
     image = Image.fromarray(image)
     draw = ImageDraw.Draw(image)
 
-    for i, (category, color) in enumerate(zip(GIBSON_CATEGORIES, GIBSON_LEGEND_PALETTE)):
+    for i, (category, color) in enumerate(zip(dset_catgories, dset_lengend_palette)):
         color = tuple([int(c * 255) for c in color])
         draw.rectangle(
             [(0, i * cat_size), (cat_size, (i + 1) * cat_size)],
@@ -197,7 +207,7 @@ def get_palette_image():
 
     return np.array(image)
 
-def visualize_sem_map(sem_map, selected_point=None, selected_angle=None, with_info=True, with_palette=True):
+def visualize_sem_map(sem_map, dset='gibson', selected_point=None, selected_angle=None, with_info=True, with_palette=True):
     """
     Visualize the semantic map using the Gibson color palette and overlay:
         - A coordinate legend in the top-left corner (drawn in red) indicating +X (arrow right) and +Z (arrow downward),
@@ -295,7 +305,7 @@ def visualize_sem_map(sem_map, selected_point=None, selected_angle=None, with_in
     
     # --- Append palette without altering the semantic map's original size ---
     if with_palette:
-        palette_img = get_palette_image()  # This returns a numpy array.
+        palette_img = get_palette_image(dset)  # This returns a numpy array.
         H = semantic_img.shape[0]
         new_palette_w = int(palette_img.shape[1] * H / palette_img.shape[0])
         palette_img_resized = cv2.resize(palette_img, (new_palette_w, H))
@@ -304,15 +314,15 @@ def visualize_sem_map(sem_map, selected_point=None, selected_angle=None, with_in
     return semantic_img
 
 # --- smoothing the sem map ---
-def show_semmap_compare(sem_map, smooth_map):
+def show_semmap_compare(sem_map, smooth_map, dset='gibson'):
     fig, axes = plt.subplots(1, 2, figsize=(12, 6))
     # Display the original semantic map
-    im0 = axes[0].imshow(visualize_sem_map(sem_map, with_info=False, with_palette=False), cmap='viridis', interpolation='nearest')
+    im0 = axes[0].imshow(visualize_sem_map(sem_map, dset=dset, with_info=False, with_palette=False), cmap='viridis', interpolation='nearest')
     axes[0].set_title("Original Topdown Map")
     axes[0].axis('off')
 
     # Display the smoothed semantic map
-    im1 = axes[1].imshow(visualize_sem_map(smooth_map, with_info=False, with_palette=False), cmap='viridis', interpolation='nearest')
+    im1 = axes[1].imshow(visualize_sem_map(smooth_map, dset=dset, with_info=False, with_palette=False), cmap='viridis', interpolation='nearest')
     axes[1].set_title("Compared Topdown Map")
     axes[1].axis('off')
 
