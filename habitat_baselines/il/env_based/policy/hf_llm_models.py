@@ -26,15 +26,41 @@ def generate_mem_prompt(objects_list):
     )
 
 class ObjectNavHFVLM(ObjectNavBase):
-    system_message="""You are an intelligent indoor navigation robot. Your task is finding a given goal object as soon as possible. You only know what you see in the current image, and you must reason about where to go next."""
+    system_message="""You are an intelligent indoor navigation robot. Your task is finding a given goal object as soon as possible. You only know what you see in the current image, and you must reason about which action to take next."""
     
+    # 'STOP': 0, 'MOVE_FORWARD': 1, 'TURN_LEFT': 2, 'TURN_RIGHT': 3, 'LOOK_UP': 4, 'LOOK_DOWN': 5
     action_info="""Allowed actions (choose exactly one, output only the action name):
-    'LOOK_DOWN', 'LOOK_UP', 'MOVE_FORWARD', 'STOP', 'TURN_LEFT', 'TURN_RIGHT'"""
+    'STOP' (only if the goal object is clearly visible AND within reach), 'MOVE_FORWARD', 'TURN_LEFT', 'TURN_RIGHT', 'LOOK_UP', 'LOOK_DOWN'"""
     
-    hint_info_no_mem="""Here are some suggestions to help you make the best decision:
-    (1) You can not move without navigable areas, confirm whether there are visible floor area in the image, avoid getting close to obstacles. If there is no navigable areas in image, you should change your direction first.
-    (2) If {goal_object} is within image, take actions to go near it. Otherwise, explore the environment logically to gain useful clues for {goal_object}, do not wander aimlessly.
-    (3) Think before action, analyze the appeared room type in the image, and reason about whether {goal_object} is likely to occur in current room. If you are confident, explore within the room, otherwise leave current room and search for another room."""
+    global_hint_info_no_mem="""
+    High‑level strategy (think before acting):
+        (1) Identify the current room or space by its key landmarks (furniture, appliances, fixtures).
+        (2) Ask yourself: “Would I expect to find {goal_object} in this room?”  
+            • If yes → systematically explore this room through visible surfaces and open areas for clues.
+            • If no → locate the most exit or passage (doorway, corridor) and head toward it to explore elsewhere.
+        (3) Every action should either reveal new space or narrow down where {goal_object} might be — avoid aimless movement."""
+
+    instant_hint_info="""
+    Hint:
+        • NEVER choose STOP unless {goal_object} is visible AND occupies ≥30% of the image.
+        • TURN_LEFT / TURN_RIGHT = rotate horizontally to reveal new directions and find alternative paths.
+        • LOOK_UP/ LOOK_DOWN = tilt camera vertically to reveal upper or lower parts of current view.
+        • If {goal_object} is visible:
+            - Center it horizontally (TURN_LEFT or TURN_RIGHT) or vertically (LOOK_UP or LOOK_DOWN) if needed.
+            - Plan a clear path toward it (avoiding obstacles) and approach until it’s within reach.
+
+    Examples:
+        • Navigable path ahead and don't want to change direction → MOVE_FORWARD  
+        • Change direction → TURN_LEFT / TURN_RIGHT
+        • Not blocked, not sure if forward is collision free → LOOK_DOWN  
+        • Not blocked, floor dominates view, limited horizontal information → LOOK_UP  
+        • Wall dominates view → TURN_LEFT / TURN_RIGHT
+        • Goal centered & large → STOP
+        
+    {previous_action_state}
+    DO NOT STOP until you find current goal: {goal_object}.
+    Your action choice:
+    """
 
     @property
     def output_size(self):
@@ -62,8 +88,8 @@ class ObjectNavHFVLM(ObjectNavBase):
     def prepare_hf_messages(self, rgb_image, object_goal, former_action):
         previous_action_state = "\n"
         if len(former_action) and former_action[-1][1]:
-            previous_action_state=f"\nYour former action {former_action[-1][0]} leads to collision.\n"
-        nav_prompt = f"{self.action_info.format(goal_object=object_goal, previous_action_state=previous_action_state)}\n{self.hint_info_no_mem.format(goal_object=object_goal)}{previous_action_state}DO NOT STOP until you find current goal: {object_goal}.\nYour action choice: "
+            previous_action_state=f"\nYour former action {former_action[-1][0]} leads to collision, you must exclude it from your choice.\n"
+        nav_prompt = f"{self.action_info.format(goal_object=object_goal, previous_action_state=previous_action_state)}{self.global_hint_info_no_mem.format(goal_object=object_goal)}{self.instant_hint_info.format(goal_object=object_goal, previous_action_state=previous_action_state)}"
         
         messages = [
             {
@@ -94,7 +120,7 @@ class ObjectNavHFVLM(ObjectNavBase):
         
         rgb_image = batch['rgb'].squeeze(0).cpu().permute(2,0,1)
         rgb_image = to_pil_image(rgb_image)
-        rgb_image.save("/home/marmot/Boyang/MEM-Nav/tmp/latest_view.png")
+        # rgb_image.save("/home/marmot/Boyang/MEM-Nav/tmp/latest_view.png")
         
         llm_messages = self.prepare_hf_messages(rgb_image, object_goal, prev_actions)
         

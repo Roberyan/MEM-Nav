@@ -6,7 +6,7 @@ TRAINER_NAME: "ddp-il-trainer"
 ENV_NAME: NavRLEnv
 SIMULATOR_GPU_ID: 0
 TORCH_GPU_ID: 0
-VIDEO_OPTION: ["disk"]
+VIDEO_OPTION: [] # ["disk"] # if save video
 TENSORBOARD_DIR: "experiment_results/hf_llm/tensorboad_dir"
 VIDEO_DIR: "experiment_results/hf_llm/video_dir"
 # To evaluate on all episodes, set this to -1

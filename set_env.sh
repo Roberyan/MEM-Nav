@@ -12,3 +12,5 @@ export PYTHONPATH=$PYTHONPATH:$PWD/dependencies/habitat-sim
 # avoid logging
 export GLOG_minloglevel=2
 export MAGNUM_LOG=quiet
+
+# change llm prompt in habitat_baselines/il/env_based/policy/hf_llm_models.py

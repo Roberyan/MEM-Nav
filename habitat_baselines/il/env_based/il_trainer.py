@@ -653,8 +653,9 @@ class ILEnvTrainer(BaseRLTrainer):
             logger.info(f"Average episode {k}: {v:.4f}")
 
         step_id = checkpoint_index
-        if "extra_state" in ckpt_dict and "step" in ckpt_dict["extra_state"]:
-            step_id = ckpt_dict["extra_state"]["step"]
+        if not if_hf_llm:
+            if "extra_state" in ckpt_dict and "step" in ckpt_dict["extra_state"]:
+                step_id = ckpt_dict["extra_state"]["step"]
 
         writer.add_scalars(
             "eval_reward",
@@ -865,7 +866,7 @@ class ILEnvTrainer(BaseRLTrainer):
             )
 
         return stats_episodes
-     
+
     def _eval_checkpoint_transformer(
         self, config, number_of_eval_episodes, 
         pred_outfile, writer, checkpoint_index
