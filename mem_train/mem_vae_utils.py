@@ -52,11 +52,7 @@ def load_instructblip_model_lavis(
 
 def generate_mem_prompt(objects_list):
     objects_str = ", ".join(objects_list)       
-    return (
-        f"Describe the environment in detail, focusing on navigable spaces, obstacles, "
-        f"and key objects: {objects_str}. "
-        "Pay attention to the spatial relationships and form a topdown map to benefit navigation."
-    )
+    return PROMPT_MEM_GEN.format(objects_str=objects_str)
 
 # return batch wise embeddings
 def prepare_blip2_embeddings(model, vis_processor, txt_processor, rgb_views, prompt_input, device=None):
@@ -75,3 +71,6 @@ def prepare_blip2_embeddings(model, vis_processor, txt_processor, rgb_views, pro
     blip_embeds_flat = model.get_qformer_features({"image": rgb_inputs_batch, "prompt": prompt_input})
     blip_embeds_batch = blip_embeds_flat.reshape(B, num_views, blip_embeds_flat.size(1), blip_embeds_flat.size(2))
     return blip_embeds_batch
+
+
+PROMPT_MEM_GEN = """From the first‑person indoor RGB view, describe the visible environment to support navigation. Analyze only what's directly visible and identify three categories: continuous navigable floor regions (free space), static obstacles (walls, furniture), and all visible objects from {objects_str} — for each object include its category, bounding box, approximate distance (m), and egocentric direction (left/center/right). Leverage any additional visible cues to infer room type and capture spatial relationships between elements (e.g., ‘chair is 1.2 m ahead, slightly right of table’)."""

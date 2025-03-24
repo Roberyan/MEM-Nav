@@ -244,70 +244,49 @@ class MEM_build_Dataset(Dataset):
         else:
             plt.show()
 
-
-# Example usage:
-def test_dataset(root_dir="data/semantic_maps", dset='gibson'):
-    dataset = MEM_build_Dataset(
-        root_dir=root_dir,
-        dataset=dset
-    )
-    print("Total samples:", len(dataset))
-    total_counts = {}
-    total_pixels = 0
-    for sample in tqdm(dataset):
-        # local_map is assumed to be a torch tensor of shape (H, W) with class indices.
-        local_map = sample["local_map"].numpy()
-        unique_vals, counts = np.unique(local_map, return_counts=True)
-        total_pixels += local_map.size
-        for val, cnt in zip(unique_vals, counts):
-            total_counts[int(val)] = total_counts.get(int(val), 0) + int(cnt)
-    return total_counts, total_pixels
-
-def pre_calculate_embeddings(root_path, nav_task="gibson", blip2_name="blip2_feature_extractor", recalculate_all=False):
-    # Recursively search for 'local_data.h5' files.
-    assert nav_task in root_path, f"Check if the path and nav task are corresponding!"
-    from mem_vae_utils import load_blip2_model_lavis, generate_mem_prompt, load_instructblip_model_lavis
-
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    def prepare_rgb_embedding(self, vlm_name="blip2_t5_instruct", recalculate_all=True):
+        assert vlm_name is not None, "You must choose a vlm model to run do the calculation"
+        from mem_vae_utils import (
+            load_blip2_model_lavis, 
+            generate_mem_prompt, 
+            load_instructblip_model_lavis
+        )
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     
-    if "instruct" in blip2_name:
-        blip2_model, vis_processors, txt_processors = load_instructblip_model_lavis(blip2_name)
-    else:
-        blip2_model, vis_processors, txt_processors = load_blip2_model_lavis(blip2_name)
-    # Move the model to the device.
-    blip2_model.to(device)
+        if "instruct" in vlm_name:
+            blip2_model, vis_processors, txt_processors = load_instructblip_model_lavis(vlm_name)
+        else:
+            blip2_model, vis_processors, txt_processors = load_blip2_model_lavis(vlm_name)
+        # Move the model to the device.
+        blip2_model.to(device)
     
-    mem_prompt = generate_mem_prompt(OBJECT_CATEGORIES[nav_task])
+        mem_prompt = generate_mem_prompt(OBJECT_CATEGORIES[self.dataset])
+        text_input = txt_processors["eval"](mem_prompt)
+        
+        for h5_path in  tqdm(self.h5_files, desc=f"Precomputing {vlm_name} embedding for mem_vae samples"):
+            with h5py.File(h5_path, "a") as f:
+                if not recalculate_all:
+                    if "rgb_embeds" in f:
+                        continue
+                else:
+                    if "rgb_embeds" in f:
+                        del f["rgb_embeds"]
 
-    h5_files = []
-    for dirpath, _, filenames in os.walk(root_path):
-        if "local_data.h5" in filenames:
-            h5_files.append(os.path.join(dirpath, "local_data.h5"))
-
-    for h5_path in  tqdm(h5_files, desc=f"Precomputing blip2 embedding for mem_vae samples"):
-        with h5py.File(h5_path, "a") as f:
-            if not recalculate_all:
-                if "rgb_embeds" in f:
-                    continue
-            rgb_views = f["rgb_views"][:]      # e.g., shape (num_views, H, W, C)
-            # Process each view using the visual processor.
-            processed_images = [vis_processors["eval"](Image.fromarray(img)).to(device) for img in rgb_views]
-            # Stack into a batch: shape (num_views, C, H, W)
-            images_batch = torch.stack(processed_images, dim=0).to(device)
-            text_input = txt_processors["eval"](mem_prompt)
-            # For BLIP2, text_input is expected as a list. We assume same prompt for all views.
-            sample = {"image": images_batch, "text_input": [text_input]*4}
-            # Extract features.
-            if recalculate_all:
-                if "rgb_embeds" in f:
-                    del f["rgb_embeds"]
-                    
-            if "instruct" in blip2_name:
-                rgb_embeds = blip2_model.get_qformer_features(sample)
-                f.create_dataset("rgb_embeds", data=rgb_embeds.cpu().numpy(), compression="gzip")  
-            else:
-                rgb_embeds = blip2_model.extract_features(sample)
-                f.create_dataset("rgb_embeds", data=rgb_embeds.multimodal_embeds.cpu().numpy(), compression="gzip")  
+                rgb_views = f["rgb_views"][:]      # e.g., shape (num_views, H, W, C)
+                # Process each view using the visual processor.
+                processed_images = [vis_processors["eval"](Image.fromarray(img)).to(device) for img in rgb_views]
+                # Stack into a batch: shape (num_views, C, H, W)
+                images_batch = torch.stack(processed_images, dim=0).to(device)
+                # For BLIP2, text_input is expected as a list. We assume same prompt for all views.
+                sample = {"image": images_batch, "text_input": [text_input]*4}
+                # Extract features.
+                
+                if "instruct" in vlm_name:
+                    embeds = blip2_model.get_qformer_features(sample)
+                else:
+                    embeds = blip2_model.extract_features(sample).multimodal_embeds
+                
+                f.create_dataset("rgb_embeds", data=embeds.cpu().numpy(), compression="gzip")
 
 def sample_and_move_locations(src_scene_dir, dest_dir, sample_ratio=0.2, move=True):
     """
@@ -373,9 +352,12 @@ def split_train_test(root_dir, test_ratio=0.2):
 
 if __name__ == "__main__":
     # Set your data directory.
-    root_dir = "data/semantic_maps"
-    test_dataset(root_dir, "mp3d")
-    
+    dataset = MEM_build_Dataset(
+        root_dir="data/semantic_maps",
+        dataset="mp3d"
+    )
+    print("Total samples:", len(dataset))
+    dataset.prepare_rgb_embedding()
     
     
     # split_train_test(root_dir, 0.2)
