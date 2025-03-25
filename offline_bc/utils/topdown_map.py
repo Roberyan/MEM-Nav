@@ -41,6 +41,9 @@ def get_surrounding_views(sim):
         rgb_images.append(obs["rgb"][..., :3])
         depth_images.append(obs["depth"])
 
+    # rotate back
+    for _ in range(3):
+        sim.step(3)
     return rgb_images, depth_images
 
 # quat to heading from sim
