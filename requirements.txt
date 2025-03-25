@@ -18,3 +18,4 @@ triton==3.1.0
 deepspeed==0.15.4
 trl
 psutil
+h5py

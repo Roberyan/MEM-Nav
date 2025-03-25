@@ -35,9 +35,28 @@ from offline_bc.preprocess.encoders import (
     SemanticPredictor,
 )
 
+from offline_bc.utils.topdown_map import(
+    SEM_MAP_SAVE_ROOT,
+    get_agent_current_floor_id,
+    get_local_map_and_views,
+    world_to_pixel,
+    extract_sem_map_patch,
+    get_surrounding_views,
+    degree_from_habitat_to_map,
+    quat_to_heading_degree,
+    visualize_sem_map,
+    display_map,
+    visualize_surrounding_views
+)
+import h5py
+
 ACTION_MAPS = {
     'STOP': 0, 'MOVE_FORWARD': 1, 'TURN_LEFT': 2, 'TURN_RIGHT': 3, 'LOOK_UP': 4, 'LOOK_DOWN': 5
 }
+ID_ACTION_MAPS = {v: k for k, v in ACTION_MAPS.items()}
+
+def get_action_txt(action_id):
+    return ID_ACTION_MAPS[action_id]
 
 category_to_task_category_id = {
     'chair': 0,
@@ -127,7 +146,7 @@ def extract_demo_obs_and_fts(args):
     print('num episodes:', num_episodes)
 
     # build encoders
-    device = torch.device('cuda:0')
+    device = torch.device('cuda:1')
     torch.set_grad_enabled(False)
 
     rgb_preprocess = T.Compose([
@@ -206,6 +225,22 @@ def extract_demo_obs_and_fts(args):
         os.path.join(args.outdir, 'meta_infos_lmdb', args.scene_id),
         map_size=int(1024**4)
     )
+    
+    if args.save_topdown_map:
+        maps_info = json.load(open(os.path.join(SEM_MAP_SAVE_ROOT, 'semmap_GT_info.json')))
+        sim = env.habitat_env.sim 
+        floor_id = get_agent_current_floor_id(sim)
+        scene_name = args.scene_id
+        scene_sem_map_path =  os.path.join(SEM_MAP_SAVE_ROOT, f"{scene_name}.h5")
+        map_world_shift = maps_info[scene_name]['map_world_shift']
+        map_resolution = maps_info[scene_name]['resolution']
+        with h5py.File(scene_sem_map_path, "r") as fp:
+            # map_y = maps_info[scene_name][floor_id]['y_min']
+            map_semantic = np.array(fp[floor_id]['map_semantic'])
+
+    if args.save_topdown_map:
+        map_pos, map_dir, local_map, rgb_views, depth_views = get_local_map_and_views(sim, map_semantic, map_resolution, map_world_shift)
+
 
     for _ in trange(num_episodes):
         observations = env.reset()
@@ -370,13 +405,14 @@ def main():
     parser.add_argument('--save_rgb', action='store_true', default=False)
     parser.add_argument('--save_semantic', action='store_true', default=False)
     parser.add_argument('--save_semantic_fts', action='store_true', default=False)
+    parser.add_argument('--save_topdown_map', action='store_true', default=False)
 
     parser.add_argument('--encode_depth', action='store_true', default=False)
     parser.add_argument('--encode_rgb_clip', action='store_true', default=False)
     parser.add_argument('--encode_rgb_resnet', action='store_true', default=False)
     parser.add_argument('--predict_semantic', action='store_true', default=False)
 
-    parser.add_argument('--image_size', type=int, default=224)
+    parser.add_argument('--image_size', type=int, default=448)
     parser.add_argument('--batch_size', type=int, default=128)
 
     parser.add_argument('--keep_collision_steps', action='store_true', default=False)
