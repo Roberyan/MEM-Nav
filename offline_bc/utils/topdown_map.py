@@ -10,22 +10,36 @@ SEM_MAP_SAVE_ROOT = "data/semantic_maps/mp3d/semantic_maps"
 
 MP3D_COLOR_PALETTE=[1.0, 1.0, 1.0, 0.9, 0.9, 0.9, 0.3, 0.3, 0.3, 0.12156862765550613, 0.46666666865348816, 0.7058823704719543, 0.6823529601097107, 0.7803921699523926, 0.9098039269447327, 1.0, 0.49803921580314636, 0.054901961237192154, 1.0, 0.7333333492279053, 0.47058823704719543, 0.1725490242242813, 0.6274510025978088, 0.1725490242242813, 0.5960784554481506, 0.8745098114013672, 0.5411764979362488, 0.8078431487083435, 0.8588235378265381, 0.6117647290229797, 0.5490196347236633, 0.4274509847164154, 0.1921568661928177, 0.5803921818733215, 0.40392157435417175, 0.7411764860153198, 0.772549033164978, 0.6901960968971252, 0.8352941274642944, 0.5490196347236633, 0.33725491166114807, 0.29411765933036804, 0.7686274647712708, 0.6117647290229797, 0.5803921818733215, 0.8901960849761963, 0.46666666865348816, 0.7607843279838562, 0.9686274528503418, 0.7137255072593689, 0.8235294222831726, 0.49803921580314636, 0.49803921580314636, 0.49803921580314636, 0.7803921699523926, 0.7803921699523926, 0.7803921699523926, 0.7372549176216125, 0.7411764860153198, 0.13333334028720856, 0.8588235378265381, 0.8588235378265381, 0.5529412031173706, 0.09019608050584793, 0.7450980544090271, 0.8117647171020508, 0.6196078658103943, 0.8549019694328308, 0.8980392217636108, 0.2235294133424759, 0.23137255012989044, 0.4745098054409027]
 
+# map to one hot map
+def convert_maps_to_oh(semmap): # convert sem map to one hot, skip out-of-bound, floor, wall
+    ncat = 21
+    semmap_oh = np.zeros((ncat, *semmap.shape), dtype=np.float32)
+    for i in range(0, ncat):
+        semmap_oh[i] = (semmap == i + 3).astype(np.float32) # no out-of-bound, floor, wall
+    return semmap_oh
+
 # collect topdown map data
 def get_local_map_and_views(sim, global_semmap, resolution, world_shift, local_map_range=64, debug=False):
+    agent_px, agent_dir_map = get_map_loc_dir_from_sim(sim, resolution, world_shift, debug)
+    rgb_views, depth_views = get_surrounding_views(sim) # rgb views & depth views
+    local_topdown_map = extract_sem_map_patch( global_semmap, agent_px, window_size=local_map_range)
+    if debug:
+        visualize_surrounding_views(rgb_views, depth_views, start_angle=agent_dir_map, save_path="/home/marmot/Boyang/MEM-Nav/tmp/surrounding_views.png")
+        cv2.imwrite(f"/home/marmot/Boyang/MEM-Nav/tmp/topdown_global_current.png", visualize_sem_map(global_semmap, selected_point=agent_px,selected_angle=agent_dir_map))
+        cv2.imwrite(f"/home/marmot/Boyang/MEM-Nav/tmp/topdown_local_current.png", visualize_sem_map(local_topdown_map,selected_point=[32, 32],selected_angle=agent_dir_map))
+    return agent_px, agent_dir_map, local_topdown_map, rgb_views, depth_views
+
+# habitat-sim to map position and directiion
+def get_map_loc_dir_from_sim(sim, resolution, world_shift, debug=False):
     pos = sim.get_agent_state().position # cur world pos of agent
     quat = sim.get_agent_state().rotation # cur quat pos of agent
     agent_px = world_to_pixel(pos, resolution, world_shift) # agent pos in map
     agent_dir_habitat = quat_to_heading_degree(quat) # agent dir in world
     agent_dir_map= degree_from_habitat_to_map(agent_dir_habitat) # agent dir in map
-    rgb_views, depth_views = get_surrounding_views(sim) # rgb views & depth views
-    local_topdown_map = extract_sem_map_patch( global_semmap, agent_px, window_size=local_map_range)
     if debug:
-        visualize_surrounding_views(rgb_views, depth_views, start_angle=agent_dir_map, save_path="/home/marmot/Boyang/MEM-Nav/tmp/surrounding_views.png")
         nav_map_sim = sim.pathfinder.get_topdown_view(resolution, pos[1])
         display_map(nav_map_sim, [agent_px], "/home/marmot/Boyang/MEM-Nav/tmp/nav_map_sim.png")
-        cv2.imwrite(f"/home/marmot/Boyang/MEM-Nav/tmp/topdown_global_current.png", visualize_sem_map(global_semmap, selected_point=agent_px,selected_angle=agent_dir_map))
-        cv2.imwrite(f"/home/marmot/Boyang/MEM-Nav/tmp/topdown_local_current.png", visualize_sem_map(local_topdown_map,selected_point=[32, 32],selected_angle=agent_dir_map))
-    return agent_px, agent_dir_map, local_topdown_map, rgb_views, depth_views
+    return agent_px, agent_dir_map
 
 # ACTION_MAPS
 # 'STOP': 0, 'MOVE_FORWARD': 1, 'TURN_LEFT': 2, 'TURN_RIGHT': 3, 'LOOK_UP': 4, 'LOOK_DOWN': 5
@@ -39,7 +53,7 @@ def get_surrounding_views(sim):
 
         obs = sim.get_sensor_observations()
         rgb_images.append(obs["rgb"][..., :3])
-        depth_images.append(obs["depth"])
+        depth_images.append(np.clip(obs["depth"], 0, 5.0)/5.0)
 
     # rotate back
     for _ in range(3):
