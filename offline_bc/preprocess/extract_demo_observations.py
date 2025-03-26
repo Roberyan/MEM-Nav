@@ -233,18 +233,18 @@ def extract_demo_obs_and_fts(args):
         )
 
         # Surrounding RGB views
-        os.makedirs(os.path.join(args.outdir, 'surrounding_rgb'), exist_ok=True)
+        os.makedirs(os.path.join(args.outdir, 'rgb_views'), exist_ok=True)
         rgb_views_env = lmdb.open(
-            os.path.join(args.outdir, 'surrounding_rgb', args.scene_id),
+            os.path.join(args.outdir, 'rgb_views', args.scene_id),
             map_size=int(1024**4)
         )
 
-        # Surrounding depth views
-        os.makedirs(os.path.join(args.outdir, 'surrounding_depth'), exist_ok=True)
-        depth_views_env = lmdb.open(
-            os.path.join(args.outdir, 'surrounding_depth', args.scene_id),
-            map_size=int(1024**4)
-        )
+        # # Surrounding depth views
+        # os.makedirs(os.path.join(args.outdir, 'depth_views'), exist_ok=True)
+        # depth_views_env = lmdb.open(
+        #     os.path.join(args.outdir, 'depth_views', args.scene_id),
+        #     map_size=int(1024**4)
+        # )
 
     rgb_encoder_names = []
     rgb_ft_lmdb_envs = {}
@@ -415,16 +415,20 @@ def extract_demo_obs_and_fts(args):
             # Save 4‑view RGB panoramas
             for t, views in enumerate(episode_obs['rgb_views']):
                 lmdb_key = f"{episode_id}:{t:04d}".encode('ascii')
+                encoded = []
+                for view in views:
+                    _, buf = cv2.imencode('.png', view, [cv2.IMWRITE_PNG_COMPRESSION, 3])
+                    encoded.append(buf.tobytes())
                 txn = rgb_views_env.begin(write=True)
-                txn.put(lmdb_key, msgpack.packb(np.stack(views)))
+                txn.put(lmdb_key, msgpack.packb(encoded))
                 txn.commit()
             
-            # Save 4‑view depth panoramas
-            for t, views in enumerate(episode_obs['depth_views']):
-                lmdb_key = f"{episode_id}:{t:04d}".encode('ascii')
-                txn = depth_views_env.begin(write=True)
-                txn.put(lmdb_key, msgpack.packb(np.stack(views)))
-                txn.commit()
+            # # Save 4‑view depth panoramas
+            # for t, views in enumerate(episode_obs['depth_views']):
+            #     lmdb_key = f"{episode_id}:{t:04d}".encode('ascii')
+            #     txn = depth_views_env.begin(write=True)
+            #     txn.put(lmdb_key, msgpack.packb(np.stack(views)))
+            #     txn.commit()
             
             for t, pos in enumerate(episode_obs['map_pos']):
                 local_map = extract_sem_map_patch(map_semantic, pos, window_size=64)
@@ -519,7 +523,7 @@ def extract_demo_obs_and_fts(args):
 
     if args.save_topdown_map:
         rgb_views_env.close()
-        depth_views_env.close()
+        # depth_views_env.close()
         topdown_map_env.close()
     if args.save_rgb:
         rgb_lmdb_env.close()
