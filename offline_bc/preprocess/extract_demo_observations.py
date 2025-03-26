@@ -47,6 +47,7 @@ from offline_bc.utils.topdown_map import(
     visualize_surrounding_views
 )
 import h5py
+from tqdm import tqdm
 
 ACTION_MAPS = {
     'STOP': 0, 'MOVE_FORWARD': 1, 'TURN_LEFT': 2, 'TURN_RIGHT': 3, 'LOOK_UP': 4, 'LOOK_DOWN': 5
@@ -575,7 +576,20 @@ def main():
     
     args = parser.parse_args()
 
-    extract_demo_obs_and_fts(args)
+    if args.scene_id == "all":
+        content_dir = "data/datasets/objectnav/objectnav_mp3d_70k/train/content"
+        scene_ids = sorted([
+            fname[:-8]  # strip off “.json.gz”
+            for fname in os.listdir(content_dir)
+            if fname.endswith(".json.gz")
+        ])
+
+        print(f"Found {len(scene_ids)} scenes:")
+        for sid in tqdm(scene_ids, desc="Processing Available demo scenes"):
+            args.scene_id = sid
+            extract_demo_obs_and_fts(args)
+    else:
+        extract_demo_obs_and_fts(args)
 
 
 if __name__ == '__main__':
