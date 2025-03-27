@@ -16,15 +16,6 @@ from PIL import Image
 from constants import (
     OBJECT_CATEGORIES
 )
-import shutil
-import random
-from constants import(
-    FLOOR_ID,
-    CAT_OFFSET,
-    # Coloring
-    d3_40_colors_rgb,
-    gibson_palette,
-)
 import matplotlib.pyplot as plt
 
 def custom_collate_fn(batch):
@@ -52,18 +43,16 @@ class MEM_build_Dataset(Dataset):
     def __init__(self, 
         root_dir="data/semantic_maps", 
         dataset="gibson",
-        split= None,
         view_wise_oh=False, 
         shuffle_views=False,
         rotate_map=True,
-        smooth_map=True
+        smooth_map=True,
+        split: str = None,
+        split_ratio: float = 0.9
     ):
         self.dataset=dataset
         self.root_dir = os.path.join(root_dir, dataset, "image_map_pairs")
         print(f"Using datasets {dataset}.")
-        
-        if split is not None: # if prearrange train and test split
-            self.root_dir = os.path.join(root_dir, split)
         
         self.h5_files = []
         self.shuffle_views = shuffle_views
@@ -77,6 +66,15 @@ class MEM_build_Dataset(Dataset):
                 
         if not self.h5_files:
             raise RuntimeError(f"No h5 files found in {root_dir}")
+
+        # SORT + SLICE for reproducible split
+        self.h5_files.sort()
+        if split in ("train", "test"):
+            split_idx = int(len(self.h5_files) * split_ratio)
+            if split == "train":
+                self.h5_files = self.h5_files[:split_idx]
+            elif split == 'test':
+                self.h5_files = self.h5_files[split_idx:]
 
     def __len__(self):
         return len(self.h5_files)
@@ -342,6 +340,7 @@ if __name__ == "__main__":
         dataset=args.dataset
     )
     print("Total samples:", len(dataset))
+    dataset[0]
     if args.precompute_depth:
         print("→ Preparing depth embeddings…")
         dataset.prepare_depth_embedding()
