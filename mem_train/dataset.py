@@ -289,7 +289,7 @@ class MEM_build_Dataset(Dataset):
                 f.create_dataset("rgb_embeds", data=embeds.cpu().numpy(), compression="gzip")
 
     def prepare_depth_embedding(self, depth_name="gibson-2plus-resnet50.pth", recalculate_all=True):
-        from blip2_conditioned_VAE import DepthEncoder
+        from mem_vae_utils import DepthEncoder
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         depth_encoder = DepthEncoder(device)
         
