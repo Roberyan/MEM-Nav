@@ -17,7 +17,7 @@ ACTIVE_DATASET="gibson" python mem_train/create_semantic_maps.py
 # sample from sim to extract local views map pairs
 ACTIVE_DATASET="mp3d" python mem_train/create_image_map.py
 # precompute blip2 embeddings, currently just in dataset.py, need to arrange later
-python mem_train/dataset.py --precompute_depth --precompute_rgb
+python mem_train/dataset.py --precompute_depth --precompute_rgb_clip
 
 # extract FMM distances for all objects in each map
 ACTIVE_DATASET="gibson" python nav_train/precompute_fmm_dists.py

@@ -4,6 +4,7 @@ import numpy as np
 from lavis.models import load_model_and_preprocess
 from habitat_baselines.rl.ddppo.policy import resnet
 from habitat_baselines.rl.ddppo.policy.resnet_policy import ResNetEncoder
+import clip
 from gym import spaces
 import torchvision.transforms as T
 to_pil = T.ToPILImage()
@@ -211,5 +212,39 @@ class DepthEncoder(object):
                 {'depth': depth_images[i: i+self.batch_size]}
             ) # (batch, 128, 4, 4)
             fts.append(ft.flatten(start_dim=1).data.cpu().numpy())
+        fts = np.concatenate(fts, 0)
+        return fts
+
+class CLIPEncoder(object):
+    def __init__(self, device, batch_size=64) -> None:
+        # load clip model
+        clip_model, clip_preprocess = clip.load('RN50', device=device)
+        clip_model = clip_model.visual
+        clip_model.attnpool = nn.Sequential(
+            nn.AdaptiveAvgPool2d(output_size=(1, 1)),
+            nn.Flatten()
+        )
+        clip_model.eval()
+        clip_preprocess = T.Compose([
+            T.ToTensor(),
+            clip_preprocess.transforms[4] # normalize
+        ])
+        self.model = clip_model
+        self.preprocess = clip_preprocess
+        self.device = device
+        self.batch_size = batch_size
+
+    def extract_fts(self, rgb_images):
+        '''
+        images: list of PIL.Image (preprocessed 224 x 224 x 3)
+        '''
+        fts = []
+        for i in range(0, len(rgb_images), self.batch_size):
+            # (batch, 3, 224, 224)
+            inputs = torch.stack(
+                [self.preprocess(x) for x in rgb_images[i: i+self.batch_size]], 0
+            ).to(self.device)
+            # (batch, 2048)
+            fts.append(self.model(inputs).data.cpu().numpy())
         fts = np.concatenate(fts, 0)
         return fts

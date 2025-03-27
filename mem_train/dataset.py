@@ -244,7 +244,7 @@ class MEM_build_Dataset(Dataset):
         else:
             plt.show()
 
-    def prepare_rgb_embedding(self, vlm_name="blip2_t5_instruct", recalculate_all=True):
+    def prepare_rgb_embedding_blip(self, vlm_name="blip2_t5_instruct", recalculate_all=True):
         assert vlm_name is not None, "You must choose a vlm model to run do the calculation"
         from mem_vae_utils import (
             load_blip2_model_lavis, 
@@ -288,6 +288,25 @@ class MEM_build_Dataset(Dataset):
                 
                 f.create_dataset("rgb_embeds", data=embeds.cpu().numpy(), compression="gzip")
 
+    def prepare_rgb_embedding_clip(self, recalculate_all=True):
+        from mem_vae_utils import CLIPEncoder
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        rgb_clip_encoder = CLIPEncoder(device)
+        
+        for h5_path in  tqdm(self.h5_files, desc=f"Precomputing clip embedding for mem_vae samples"):
+            with h5py.File(h5_path, "a") as f:
+                if not recalculate_all:
+                    if "rgb_embeds" in f:
+                        continue
+                else:
+                    if "rgb_embeds" in f:
+                        del f["rgb_embeds"]
+
+                rgb_views = f["rgb_views"][:]      # e.g., shape (num_views, H, W, C)
+                flat_imgs = [Image.fromarray(view) for view in rgb_views]
+                clip_feats = rgb_clip_encoder.extract_fts(flat_imgs)
+                f.create_dataset("rgb_embeds", data=clip_feats, compression="gzip")
+
     def prepare_depth_embedding(self, depth_name="gibson-2plus-resnet50.pth", recalculate_all=True):
         from mem_vae_utils import DepthEncoder
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -307,75 +326,14 @@ class MEM_build_Dataset(Dataset):
                 depth_embeds = depth_encoder.extract_fts(depth_batch)  # shape (4, 2048)
                 f.create_dataset("depth_embeds", data=depth_embeds, compression="gzip")
 
-def sample_and_move_locations(src_scene_dir, dest_dir, sample_ratio=0.2, move=True):
-    """
-    Samples a given ratio of "location_*" subdirectories from src_scene_dir and moves (or copies) them to dest_dir.
-    
-    Args:
-        src_scene_dir (str): Path to the source scene directory.
-        dest_dir (str): Path to the destination directory.
-        sample_ratio (float): Fraction of location folders to move. (e.g., 0.2 means 20%)
-        move (bool): If True, move the directories; if False, copy them.
-    """
-    # Ensure destination directory exists.
-    os.makedirs(dest_dir, exist_ok=True)
-    
-    # List all entries in the source directory.
-    all_entries = os.listdir(src_scene_dir)
-    # Filter for subdirectories that start with "location_"
-    location_dirs = [d for d in all_entries if os.path.isdir(os.path.join(src_scene_dir, d)) and d.startswith("location_")]
-    
-    if not location_dirs:
-        print("No location folders found in", src_scene_dir)
-        return
-    
-    # Determine the number to sample.
-    if sample_ratio != 1:
-        sample_count = max(1, int(len(location_dirs) * sample_ratio))
-        sampled_dirs = random.sample(location_dirs, sample_count)
-    else:
-        sampled_dirs = location_dirs
-    
-    for folder in sampled_dirs:
-        src_path = os.path.join(src_scene_dir, folder)
-        dest_path = os.path.join(dest_dir, folder)
-        if move:
-            shutil.move(src_path, dest_path)
-            print(f"Moved {src_path} to {dest_path}")
-        else:
-            shutil.copytree(src_path, dest_path)
-            print(f"Copied {src_path} to {dest_path}")
-
-def split_train_test(root_dir, test_ratio=0.2):
-    test_root = os.path.join(root_dir, "test")
-    train_root = os.path.join(root_dir, "train")
-    os.makedirs(test_root, exist_ok=True)
-    os.makedirs(train_root, exist_ok=True)
-    
-    scene_floor_dirs = os.listdir(root_dir)
-    for scene_floor_dir in scene_floor_dirs:
-        test_dest_dir = os.path.join(test_root, scene_floor_dir)
-        train_dest_dir = os.path.join(train_root, scene_floor_dir)
-        sample_and_move_locations(
-            os.path.join(root_dir, scene_floor_dir),
-            test_dest_dir,
-            test_ratio,
-            True
-        )
-        sample_and_move_locations(
-            os.path.join(root_dir, scene_floor_dir),
-            train_dest_dir,
-            1,
-            True
-        )
-
 if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser(description="Precompute RGB & Depth embeddings for MEM dataset")
     parser.add_argument("--root_dir", type=str, default="data/semantic_maps", help="Path to semantic maps root")
     parser.add_argument("--dataset", type=str, default="mp3d", choices=["mp3d", "gibson"], help="Which dataset to build")
     parser.add_argument("--precompute_depth", action="store_true", help="Compute depth embeddings")
-    parser.add_argument("--precompute_rgb", action="store_true", help="Compute RGB embeddings")
+    parser.add_argument("--precompute_rgb_blip", action="store_true", help="Compute RGB embeddings")
+    parser.add_argument("--precompute_rgb_clip", action="store_true", help="Compute RGB embeddings")
     args = parser.parse_args()
     
     # Set your data directory.
@@ -388,11 +346,10 @@ if __name__ == "__main__":
         print("→ Preparing depth embeddings…")
         dataset.prepare_depth_embedding()
 
-    if args.precompute_rgb:
-        print("→ Preparing RGB embeddings…")
-        dataset.prepare_rgb_embedding()
+    if args.precompute_rgb_blip:
+        print("→ Preparing blip RGB embeddings…")
+        dataset.prepare_rgb_embedding_blip()
     
-    # split_train_test(root_dir, 0.2)
-    # train_root_dir = "data/semantic_maps/gibson/image_map_pairs/train"
-    # pre_calculate_embeddings(train_root_dir,  blip2_name="blip2_t5_instruct", recalculate_all=False)
-    
+    if args.precompute_rgb_clip:
+        print("→ Preparing clip RGB embeddings…")
+        dataset.prepare_rgb_embedding_clip()
