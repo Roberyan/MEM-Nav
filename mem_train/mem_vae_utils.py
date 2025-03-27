@@ -73,4 +73,4 @@ def prepare_blip2_embeddings(model, vis_processor, txt_processor, rgb_views, pro
     return blip_embeds_batch
 
 
-PROMPT_MEM_GEN = """From the first‑person indoor RGB view, describe the visible environment to support navigation. Analyze only what's directly visible and identify three categories: continuous navigable floor regions (free space), static obstacles (walls, furniture), and all visible objects from {objects_str} — for each object include its category, bounding box, approximate distance (m), and egocentric direction (left/center/right). Leverage any additional visible cues to infer room type and capture spatial relationships between elements (e.g., ‘chair is 1.2 m ahead, slightly right of table’)."""
+PROMPT_MEM_GEN = """Describe the visible environment in details. Analyze only what's directly visible and identify three categories: continuous navigable floor regions (free space), static obstacles (walls, furniture), and all visible objects from {objects_str} — for each object include its category, bounding box, approximate distance (m), and egocentric direction (left/center/right)."""

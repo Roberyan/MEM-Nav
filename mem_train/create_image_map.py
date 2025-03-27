@@ -121,8 +121,8 @@ if __name__ == "__main__":
         sim, action_names, sim_settings = init_sim(
             scene_glb_path, 
             use_sem_sensor=False,
-            image_height=448,
-            image_width=448,
+            image_height=224,
+            image_width=224,
             hfov=79
         )
 

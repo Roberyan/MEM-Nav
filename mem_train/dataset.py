@@ -288,6 +288,25 @@ class MEM_build_Dataset(Dataset):
                 
                 f.create_dataset("rgb_embeds", data=embeds.cpu().numpy(), compression="gzip")
 
+    def prepare_depth_embedding(self, depth_name="gibson-2plus-resnet50.pth", recalculate_all=True):
+        from blip2_conditioned_VAE import DepthEncoder
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        depth_encoder = DepthEncoder(device)
+        
+        for h5_path in  tqdm(self.h5_files, desc=f"Precomputing {depth_name} embedding for mem_vae samples"):
+            with h5py.File(h5_path, "a") as f:
+                if not recalculate_all:
+                    if "depth_embeds" in f:
+                        continue
+                else:
+                    if "depth_embeds" in f:
+                        del f["depth_embeds"]
+
+                depth_views = f["depth_views"][:]
+                depth_batch = torch.from_numpy(depth_views).unsqueeze(-1).to(device)
+                depth_embeds = depth_encoder.extract_fts(depth_batch)  # shape (4, 2048)
+                f.create_dataset("depth_embeds", data=depth_embeds, compression="gzip")
+
 def sample_and_move_locations(src_scene_dir, dest_dir, sample_ratio=0.2, move=True):
     """
     Samples a given ratio of "location_*" subdirectories from src_scene_dir and moves (or copies) them to dest_dir.
@@ -351,14 +370,27 @@ def split_train_test(root_dir, test_ratio=0.2):
         )
 
 if __name__ == "__main__":
+    import argparse
+    parser = argparse.ArgumentParser(description="Precompute RGB & Depth embeddings for MEM dataset")
+    parser.add_argument("--root_dir", type=str, default="data/semantic_maps", help="Path to semantic maps root")
+    parser.add_argument("--dataset", type=str, default="mp3d", choices=["mp3d", "gibson"], help="Which dataset to build")
+    parser.add_argument("--precompute_depth", action="store_true", help="Compute depth embeddings")
+    parser.add_argument("--precompute_rgb", action="store_true", help="Compute RGB embeddings")
+    args = parser.parse_args()
+    
     # Set your data directory.
     dataset = MEM_build_Dataset(
-        root_dir="data/semantic_maps",
-        dataset="mp3d"
+        root_dir=args.root_dir,
+        dataset=args.dataset
     )
     print("Total samples:", len(dataset))
-    dataset.prepare_rgb_embedding()
-    
+    if args.precompute_depth:
+        print("→ Preparing depth embeddings…")
+        dataset.prepare_depth_embedding()
+
+    if args.precompute_rgb:
+        print("→ Preparing RGB embeddings…")
+        dataset.prepare_rgb_embedding()
     
     # split_train_test(root_dir, 0.2)
     # train_root_dir = "data/semantic_maps/gibson/image_map_pairs/train"
