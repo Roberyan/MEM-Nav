@@ -115,16 +115,8 @@ class MEM_build_Dataset(Dataset):
             rgb_views = f["rgb_views"][:]      # e.g., shape (num_views, H, W, C)
             depth_views = f["depth_views"][:]      # e.g., shape (num_views, H, W)
             # map_world_shift = f["map_world_shift"][:]
-            if "rgb_embeds" in f:
-                rgb_embeds = f["rgb_embeds"][:]
-                rgb_embeds = torch.from_numpy(rgb_embeds).float()
-            else:
-                rgb_embeds = None 
-            if "depth_embeds" in f:
-                depth_embeds = f["depth_embeds"][:]
-                depth_embeds = torch.from_numpy(depth_embeds).float()
-            else:
-                depth_embeds = None 
+            rgb_embeds = torch.from_numpy(f["rgb_embeds"][:]).float() if "rgb_embeds" in f else None
+            depth_embeds = torch.from_numpy(f["depth_embeds"][:]).float() if "depth_embeds" in f else None
 
         # # for debugging
         # self.visualize_surrounding_views(start_angles=map_dir,rgb_views=rgb_views,depth_views=depth_views,save_path="/home/marmot/Boyang/MEM-Nav/tmp/dataset_views.png")
@@ -142,7 +134,7 @@ class MEM_build_Dataset(Dataset):
         # Process rgb_views: convert from HWC to CHW and cast to float.
         rgb_views_tensor = torch.from_numpy(rgb_views).permute(0, 3, 1, 2).float()
         
-        depth_views_tensor = torch.from_numpy(depth_views).float().unsqueeze(1)
+        depth_views_tensor = torch.from_numpy(depth_views).float()
         depth_views_tensor = depth_views_tensor.clamp(0, self.max_depth)
 
         # shuffle views order while keeping the corresponding order
@@ -181,7 +173,7 @@ class MEM_build_Dataset(Dataset):
         sample_dict = {
             "local_map": local_map_tensor,      # Tensor, shape (1, H, W)
             "rgb_views": rgb_views_tensor,        # Tensor, shape (num_views, C, H, W)
-            "depth_views": depth_views,
+            "depth_views": depth_views_tensor,
             "onehot_info": oh_info,             # List of one-hot arrays, one per view.
             "h5_path": h5_path
         }
