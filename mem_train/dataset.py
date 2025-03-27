@@ -16,6 +16,7 @@ from PIL import Image
 from constants import (
     OBJECT_CATEGORIES
 )
+import random
 import matplotlib.pyplot as plt
 
 def custom_collate_fn(batch):
@@ -48,7 +49,8 @@ class MEM_build_Dataset(Dataset):
         rotate_map=True,
         smooth_map=True,
         split: str = None,
-        split_ratio: float = 0.9
+        split_ratio: float = 0.9,
+        exclude_wall=True
     ):
         self.dataset=dataset
         self.root_dir = os.path.join(root_dir, dataset, "image_map_pairs")
@@ -59,6 +61,7 @@ class MEM_build_Dataset(Dataset):
         self.view_wise_oh = view_wise_oh
         self.rotate_map = rotate_map # make current map align with current view
         self.smooth_map = smooth_map
+        self.exclude_wall = exclude_wall
         # Recursively search for 'local_data.h5' files.
         for dirpath, _, filenames in os.walk(self.root_dir):
             if "local_data.h5" in filenames:
@@ -69,6 +72,7 @@ class MEM_build_Dataset(Dataset):
 
         # SORT + SLICE for reproducible split
         self.h5_files.sort()
+        random.Random(2025).shuffle(self.h5_files)
         if split in ("train", "test"):
             split_idx = int(len(self.h5_files) * split_ratio)
             if split == "train":
@@ -91,7 +95,7 @@ class MEM_build_Dataset(Dataset):
     def get_one_hot(self, local_map, view_mask=None):
         sem_map = local_map if view_mask is None else np.where(view_mask, local_map, 0)
         semmap_oh = convert_maps_to_oh(sem_map, dset=self.dataset)
-        return (semmap_oh.sum(axis=(1, 2)) > 0).astype(np.int8)
+        return (semmap_oh.sum(axis=(1, 2)) > 0).astype(np.int8)[2:] # no wall, floor
 
     # topdown map local mask
     def get_map_view_mask(self, local_map, init_dir):
@@ -124,6 +128,8 @@ class MEM_build_Dataset(Dataset):
 
         # # for debugging
         # self.visualize_surrounding_views(start_angles=map_dir,rgb_views=rgb_views,depth_views=depth_views,save_path="/home/marmot/Boyang/MEM-Nav/tmp/dataset_views.png")
+        if self.exclude_wall:
+            local_map[local_map == 0] = 0
         
         if self.view_wise_oh:
             # Generate one-hot vectors for each view using corresponding view masks.
