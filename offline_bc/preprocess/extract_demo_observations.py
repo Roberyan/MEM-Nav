@@ -224,6 +224,7 @@ def extract_demo_obs_and_fts(args):
             os.path.join(args.outdir, 'sem_fts', args.scene_id),
             map_size=int(1024**4)
         )
+    
     if args.save_topdown_map:
         # local topdown map
         os.makedirs(os.path.join(args.outdir, 'topdown_map'), exist_ok=True)
@@ -231,7 +232,7 @@ def extract_demo_obs_and_fts(args):
             os.path.join(args.outdir, 'topdown_map', args.scene_id),
             map_size=int(1024**4)
         )
-
+    if args.save_rgb_views:
         # Surrounding RGB views
         os.makedirs(os.path.join(args.outdir, 'rgb_views'), exist_ok=True)
         rgb_views_env = lmdb.open(
@@ -239,12 +240,13 @@ def extract_demo_obs_and_fts(args):
             map_size=int(1024**4)
         )
 
-        # # Surrounding depth views
-        # os.makedirs(os.path.join(args.outdir, 'depth_views'), exist_ok=True)
-        # depth_views_env = lmdb.open(
-        #     os.path.join(args.outdir, 'depth_views', args.scene_id),
-        #     map_size=int(1024**4)
-        # )
+    if args.save_depth_views:
+        # Surrounding depth views
+        os.makedirs(os.path.join(args.outdir, 'depth_views'), exist_ok=True)
+        depth_views_env = lmdb.open(
+            os.path.join(args.outdir, 'depth_views', args.scene_id),
+            map_size=int(1024**4)
+        )
 
     rgb_encoder_names = []
     rgb_ft_lmdb_envs = {}
@@ -259,7 +261,7 @@ def extract_demo_obs_and_fts(args):
             os.path.join(args.outdir, 'rgb_fts', name, args.scene_id),
             map_size=int(1024**4)
         )
-        if args.save_topdown_map:
+        if args.encode_rgb_views_clip:
             os.makedirs(os.path.join(args.outdir, 'rgb_views_fts', name), exist_ok=True)
             rgb_ft_views_envs[name] = lmdb.open(
                 os.path.join(args.outdir, 'rgb_views_fts', name, args.scene_id),
@@ -378,31 +380,32 @@ def extract_demo_obs_and_fts(args):
             rgb_views_fts = {}
         if args.encode_rgb_clip:
             rgb_fts['clip'] = rgb_clip_encoder.extract_fts(resized_rgb_images)
-            if args.save_topdown_map:
-                flat_imgs = [
-                        Image.fromarray(view)
-                        for views in episode_obs['rgb_views']
-                        for view in views
-                    ]
-                flat_feats = rgb_clip_encoder.extract_fts(flat_imgs)
-                clip_feats = flat_feats.reshape(len(episode_obs['rgb_views']), 4, -1)
-                rgb_views_fts['clip'] = clip_feats
         if args.encode_rgb_resnet:
             rgb_fts.update(rgb_resnet_encoders.extrat_fts(resized_rgb_images))
+
+        if args.encode_rgb_views_clip:
+            flat_imgs = [
+                    Image.fromarray(view)
+                    for views in episode_obs['rgb_views']
+                    for view in views
+                ]
+            flat_feats = rgb_clip_encoder.extract_fts(flat_imgs)
+            clip_feats = flat_feats.reshape(len(episode_obs['rgb_views']), 4, -1)
+            rgb_views_fts['clip'] = clip_feats
 
         if args.encode_depth:
             depth_images = torch.stack([torch.from_numpy(x) for x in episode_obs['depth']]).to(device)
             depth_fts = depth_encoder.extract_fts(depth_images) # (batch, dim_ft)
-            if args.save_topdown_map:
-                flat_depth_views = [
-                    torch.from_numpy(view).unsqueeze(-1)
-                    for timestep_views in episode_obs['depth_views']
-                    for view in timestep_views
-                ] # Flatten (timesteps × 4 views) → batch
-                depth_views_images = torch.stack(flat_depth_views).to(device)  # shape (320, 224, 224, 1)
-                flat_views_feats = depth_encoder.extract_fts(depth_views_images)  # shape (320, 2048)
-                # Reshape back → (T, 4, 2048)
-                depth_views_fts = flat_views_feats.reshape(len(episode_obs['depth_views']), 4, -1) # shape (80, 4, 2048)
+        if args.encode_depth_views:
+            flat_depth_views = [
+                torch.from_numpy(view).unsqueeze(-1)
+                for timestep_views in episode_obs['depth_views']
+                for view in timestep_views
+            ] # Flatten (timesteps × 4 views) → batch
+            depth_views_images = torch.stack(flat_depth_views).to(device)  # shape (320, 224, 224, 1)
+            flat_views_feats = depth_encoder.extract_fts(depth_views_images)  # shape (320, 2048)
+            # Reshape back → (T, 4, 2048)
+            depth_views_fts = flat_views_feats.reshape(len(episode_obs['depth_views']), 4, -1) # shape (80, 4, 2048)
             
         if args.predict_semantic:
             rgb_images = torch.from_numpy(np.stack(episode_obs['rgb'], 0)).to(device)
@@ -412,6 +415,15 @@ def extract_demo_obs_and_fts(args):
         episode_key = episode_id.encode('ascii')
 
         if args.save_topdown_map:
+            for t, pos in enumerate(episode_obs['map_pos']):
+                local_map = extract_sem_map_patch(map_semantic, pos, window_size=64)
+                lmdb_key = f"{episode_id}:{t:04d}".encode('ascii')
+                _, local_map = cv2.imencode('.png', local_map, [cv2.IMWRITE_PNG_COMPRESSION, 3])
+                txn = topdown_map_env.begin(write=True)
+                txn.put(lmdb_key, msgpack.packb(local_map))
+                txn.commit()
+        
+        if args.save_rgb_views:
             # Save 4‑view RGB panoramas
             for t, views in enumerate(episode_obs['rgb_views']):
                 lmdb_key = f"{episode_id}:{t:04d}".encode('ascii')
@@ -422,35 +434,30 @@ def extract_demo_obs_and_fts(args):
                 txn = rgb_views_env.begin(write=True)
                 txn.put(lmdb_key, msgpack.packb(encoded))
                 txn.commit()
-            
-            # # Save 4‑view depth panoramas
-            # for t, views in enumerate(episode_obs['depth_views']):
-            #     lmdb_key = f"{episode_id}:{t:04d}".encode('ascii')
-            #     txn = depth_views_env.begin(write=True)
-            #     txn.put(lmdb_key, msgpack.packb(np.stack(views)))
-            #     txn.commit()
-            
-            for t, pos in enumerate(episode_obs['map_pos']):
-                local_map = extract_sem_map_patch(map_semantic, pos, window_size=64)
+        
+        if args.save_depth_views:
+            # Save 4‑view depth panoramas
+            for t, views in enumerate(episode_obs['depth_views']):
                 lmdb_key = f"{episode_id}:{t:04d}".encode('ascii')
-                txn = topdown_map_env.begin(write=True)
-                txn.put(lmdb_key, msgpack.packb(local_map))
+                txn = depth_views_env.begin(write=True)
+                txn.put(lmdb_key, msgpack.packb(np.stack(views)))
                 txn.commit()
-            
-            # depth_views_fts has shape (T, 4, 2048)
-            if args.encode_depth:
-                for t in range(depth_views_fts.shape[0]):
-                    lmdb_key = f"{episode_id}:{t:04d}".encode('ascii')
-                    txn = depth_views_ft_env.begin(write=True)
-                    txn.put(lmdb_key, msgpack.packb(depth_views_fts[t]))
-                    txn.commit()
-            if args.encode_rgb_clip:
-                for t in range(rgb_views_fts['clip'].shape[0]):
+        
+        if args.encode_rgb_views_clip:
+            for t in range(rgb_views_fts['clip'].shape[0]):
                     lmdb_key = f"{episode_id}:{t:04d}".encode('ascii')
                     txn = rgb_ft_views_envs['clip'].begin(write=True)
                     txn.put(lmdb_key, msgpack.packb(rgb_views_fts['clip'][t]))
                     txn.commit()
-            
+
+        if args.encode_depth_views:
+            # depth_views_fts has shape (T, 4, 2048)
+            for t in range(depth_views_fts.shape[0]):
+                lmdb_key = f"{episode_id}:{t:04d}".encode('ascii')
+                txn = depth_views_ft_env.begin(write=True)
+                txn.put(lmdb_key, msgpack.packb(depth_views_fts[t]))
+                txn.commit()
+        
         if args.save_rgb:  
             for t, x in enumerate(resized_rgb_images):
                 x = np.array(x)
@@ -522,9 +529,16 @@ def extract_demo_obs_and_fts(args):
         txn.commit()
 
     if args.save_topdown_map:
-        rgb_views_env.close()
-        # depth_views_env.close()
         topdown_map_env.close()
+    if args.save_rgb_views:
+        rgb_views_env.close()
+    if args.save_depth_views:
+        depth_views_env.close()
+    if args.encode_rgb_views_clip:
+        for k, v in rgb_ft_views_envs.items():
+            v.close()
+    if args.encode_depth_views:
+        depth_views_ft_env.close()
     if args.save_rgb:
         rgb_lmdb_env.close()
     if args.save_semantic:
@@ -534,13 +548,8 @@ def extract_demo_obs_and_fts(args):
     if args.encode_rgb_clip or args.encode_rgb_resnet:
         for k, v in rgb_ft_lmdb_envs.items():
             v.close()
-        if args.save_topdown_map:
-            for k, v in rgb_ft_views_envs.items():
-                v.close()
     if args.encode_depth:
         depth_ft_lmdb_env.close()
-        if args.save_topdown_map:
-            depth_views_ft_env.close()
     if args.predict_semantic:
         sem_preds_lmdb_env.close()
     meta_info_lmdb_env.close()
@@ -565,11 +574,15 @@ def main():
     parser.add_argument('--save_semantic', action='store_true', default=False)
     parser.add_argument('--save_semantic_fts', action='store_true', default=False)
     parser.add_argument('--save_topdown_map', action='store_true', default=False)
+    parser.add_argument('--save_rgb_views', action='store_true', default=False)
+    parser.add_argument('--save_depth_views', action='store_true', default=False)
 
     parser.add_argument('--encode_depth', action='store_true', default=False)
     parser.add_argument('--encode_rgb_clip', action='store_true', default=False)
     parser.add_argument('--encode_rgb_resnet', action='store_true', default=False)
     parser.add_argument('--predict_semantic', action='store_true', default=False)
+    parser.add_argument('--encode_rgb_views_clip', action='store_true', default=False)
+    parser.add_argument('--encode_depth_views', action='store_true', default=False)
 
     parser.add_argument('--image_size', type=int, default=224)
     parser.add_argument('--batch_size', type=int, default=128)
@@ -581,16 +594,20 @@ def main():
     args = parser.parse_args()
 
     if args.scene_id == "all":
-        content_dir = "data/datasets/objectnav/objectnav_mp3d_70k/train/content"
         scene_ids = sorted([
-            fname[:-8]  # strip off “.json.gz”
-            for fname in os.listdir(content_dir)
-            if fname.endswith(".json.gz")
+            "17DRP5sb8fy", "7y3sRwLe3Va", "cV4RVeZvu5T", "GdvgFV5R1Z5", "kEZ7cmS4wCh", "qoiz87JEwZ2", "sT4fr6TAbpF", "VLzqgDo317F",
+            "1LXtFkjw3qL", "82sE5b5pLXE", "D7G3Y4RVNrH", "gZ6f7yhEvPG", "mJXqzFtmKg4", "r1Q1Z4BcV1o", "ULsKaCPVFJR", "VVfe2KiqLaN",
+            "1pXnuDYAj8r", "8WUmhLawc2A", "D7N2EKCX4Sj", "HxpKQynjfin", "p5wJjkQkbXX", "r47D5H71a5s", "uNb9QFRL6hY", "Vvot9Ly1tCj",
+            "29hnd4uzFmX", "aayBHfsNo7d", "dhjEzFoUFzH", "i5noydFURQK", "Pm6F8kyY3z2", "rPc6DW4iMge", "ur6pFq6Qu1A", "vyrNrziPKCB",
+            "5LpN3gDmAk7", "ac26ZMwG7aT", "E9uDoFAP3SH", "JeFG25nYj2p", "pRbA3pwrgk9", "s8pcmisQ38h", "Uxmj2M2itWa", "XcA2TqTSSAj",
+            "5q7pvUzZiYa", "B6ByNegPMKs", "e9zR4mvMWw7", "JF19kD82Mey", "PuKPg4mmafe", "S9hNv5qa7GM", "V2XKFyX4ASd", "YmJkqBEsHnH",
+            "759xd9YjKW5", "b8cTxDM8gDG", "EDJbREhghzL", "jh4fc5c5qoQ", "PX4nDJXEHrG", "sKLMLpTHeUy", "VFuaQ6m2Qom", "ZMojNkEp431"
         ])
 
         print(f"Found {len(scene_ids)} scenes:")
-        for sid in tqdm(scene_ids, desc="Processing Available demo scenes"):
+        for sid in tqdm(scene_ids, desc=f"Processing Available demo scenes"):
             args.scene_id = sid
+            print(sid)
             extract_demo_obs_and_fts(args)
     else:
         extract_demo_obs_and_fts(args)
