@@ -11,9 +11,10 @@ val_dataset_path=data/datasets/objectnav/mp3d/v1
 evalsplit=val
 
 hf_llm=Qwen/Qwen2.5-VL-3B-Instruct
-outdir=experiment_results/hf_llm_qwen
+outdir=experiment_results/hf_llm_qwen_surrounding_views
 result_dir=${outdir}/eval_res
 lora_checkpoint=""
+nav_type="surrounding_views"
 
 python_bin=$(which python)
 
@@ -35,4 +36,5 @@ ${python_bin} -u habitat_baselines/run.py \
     NUM_PROCESSES 1 \
     MODEL.model_class "${hf_llm}" \
     MODEL.if_hf_llm True \
-    MODEL.lora_checkpoint "${lora_checkpoint}"
+    MODEL.lora_checkpoint "${lora_checkpoint}" \
+    MODEL.nav_type "${nav_type}"
