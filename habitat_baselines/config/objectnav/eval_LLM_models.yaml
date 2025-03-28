@@ -20,6 +20,7 @@ LOG_INTERVAL: 10
 LOG_METRICS: True
 CHECKPOINT_INTERVAL: 500
 SENSORS: ['RGB_SENSOR', 'SEMANTIC_SENSOR', 'DEPTH_SENSOR']
+USE_SURROUNDING: True
 RESULTS_DIR: "experiment_results/hf_llm/sem_seg_pred/{split}/{type}"
 EVAL_RESULTS_DIR: "experiment_results/hf_llm/results/"
 EVAL_SAVE_RESULTS: True
@@ -56,6 +57,7 @@ MODEL:
   hidden_size: 2048
   action_clf_class: "text" # "linear"
   enc_collide_steps: False
+  nav_type: "single_view" # surrounding_views
 
   ablate_depth: False
   ablate_rgb: False

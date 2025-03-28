@@ -50,6 +50,8 @@ from habitat.utils.geometry_utils import (
     quaternion_rotate_vector,
     quaternion_to_list,
 )
+import math
+from copy import deepcopy
 
 try:
     from habitat_baselines.il.common.encoders.semantic_predictor import SegmentationModel
@@ -565,6 +567,35 @@ class ILEnvTrainer(BaseRLTrainer):
         config.TASK_CONFIG.DATASET.TYPE = "ObjectNav-v1"
         config.TASK_CONFIG.ENVIRONMENT.MAX_EPISODE_STEPS = 500
         config.TASK_CONFIG.TASK.MEASUREMENTS.append("COLLISIONS")   # Just for self-test
+        
+        ########### add surrounding views ##############
+        if getattr(config, "USE_SURROUNDING", False):
+            if "RGB_SENSOR" in config.TASK_CONFIG.SIMULATOR.AGENT_0.SENSORS:
+                CAMERA_NUM = 4
+                orientations = [
+                    [0, 0, 0],                # Front
+                    [0, math.pi / 2, 0],       # Right
+                    [0, math.pi, 0],          # Back
+                    [0, 3 / 2 * math.pi, 0],   # Left
+                ]
+                sensor_dir=[
+                    "front",
+                    "right",
+                    "back",
+                    "left"
+                ]
+                self.sensor_uuids = []
+                default_rgb_sensor = deepcopy(config.TASK_CONFIG.SIMULATOR.RGB_SENSOR)
+                default_rgb_sensor.ORIENTATION = orientations[0]
+                for camera_id in range(CAMERA_NUM):
+                    camera_template = f"RGB_{sensor_dir[camera_id]}"
+                    camera_config = deepcopy(config.TASK_CONFIG.SIMULATOR.RGB_SENSOR)
+                    camera_config.ORIENTATION = orientations[camera_id]
+                    camera_config.UUID = camera_template.lower()
+                    self.sensor_uuids.append(camera_config.UUID)
+                    setattr(config.TASK_CONFIG.SIMULATOR, camera_template, camera_config)
+                    config.SENSORS.append(camera_template)
+        ##############################################################
         config.freeze()
 
         use_subgoal = getattr(config.MODEL, 'use_subgoal', False)
@@ -1164,7 +1195,6 @@ class ILEnvTrainer(BaseRLTrainer):
             Any, Any
         ] = {}  # dict of dicts that stores stats per episode
 
-        model_config = self.config.MODEL
         gpscompass_noise_type = getattr(self.config.MODEL, 'gpscompass_noise_type', None)
         for _ in tqdm.trange(number_of_eval_episodes):
             pred_trajectories = {
@@ -1199,8 +1229,7 @@ class ILEnvTrainer(BaseRLTrainer):
                     )
                     rgb_frames.append(frame)
 
-                actions, recursive_states = self.policy(batch, recursive_states, prev_actions, nav_step)
-
+                actions, recursive_states = self.policy(batch, recursive_states, prev_actions)
                 print(actions)
                 step_data = actions
                 
