@@ -305,20 +305,6 @@ def extract_demo_obs_and_fts(args):
     num_episodes = len(env.episodes)
     print('num episodes:', num_episodes)
 
-    # build encoders
-    torch.set_grad_enabled(False)
-    
-    if args.save_topdown_map:
-        maps_info = json.load(open(os.path.join(SEM_MAP_SAVE_ROOT, 'semmap_GT_info.json')))
-        floor_id = get_agent_current_floor_id(env.habitat_env.sim)
-        scene_name = args.scene_id
-        scene_sem_map_path =  os.path.join(SEM_MAP_SAVE_ROOT, f"{scene_name}.h5")
-        map_world_shift = maps_info[scene_name]['map_world_shift']
-        map_resolution = maps_info[scene_name]['resolution']
-        with h5py.File(scene_sem_map_path, "r") as fp:
-            # map_y = maps_info[scene_name][floor_id]['y_min']
-            map_semantic = np.array(fp[floor_id]['map_semantic'])
-
     # Create scene-specific output directories.
     outdir = args.outdir
     os.makedirs(outdir, exist_ok=True)
@@ -331,6 +317,13 @@ def extract_demo_obs_and_fts(args):
     # os.makedirs(sem_dir, exist_ok=True)
     ann_path = os.path.join(scene_dir, "annotations.jsonl")
     
+    if args.save_topdown_map:
+        maps_info = json.load(open(os.path.join(SEM_MAP_SAVE_ROOT, 'semmap_GT_info.json')))
+        scene_name = args.scene_id
+        scene_sem_map_path =  os.path.join(SEM_MAP_SAVE_ROOT, f"{scene_name}.h5")
+        map_world_shift = maps_info[scene_name]['map_world_shift']
+        map_resolution = maps_info[scene_name]['resolution']
+    
     for _ in trange(num_episodes):
         observations = env.reset()
         episode_id = env.current_episode.episode_id
@@ -339,6 +332,12 @@ def extract_demo_obs_and_fts(args):
                 for x in env.current_episode.reference_replay[1:]
         ]
         demo_actions = [ACTION_MAPS[x] for x in demo_actions]
+        
+        floor_id = get_agent_current_floor_id(env.habitat_env.sim)
+        if args.save_topdown_map:
+            with h5py.File(scene_sem_map_path, "r") as fp:
+                # map_y = maps_info[scene_name][floor_id]['y_min']
+                map_semantic = np.array(fp[floor_id]['map_semantic'])
 
         if args.remove_look_actions:
             demo_actions = [x for x in demo_actions if x not in (4, 5) ]
@@ -504,6 +503,7 @@ def extract_demo_obs_and_fts(args):
         # Build meta info.
         meta_info = {
             "episode_id": episode_id,
+            "floor_id": floor_id,
             "objectgoal": episode_obs["objectgoal"][0].item(),
             "object_category": env.current_episode.object_category,
             "compass": np.stack(episode_obs["compass"], 0).tolist(),
