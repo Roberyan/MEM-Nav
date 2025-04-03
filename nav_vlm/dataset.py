@@ -14,6 +14,7 @@ class NavDemoDataset(Dataset):
             scene_id=None,
             demo_merge_ratio=0.5,
             episode_merge_ratio=0.5,
+            p_merge_all_episode=0.2,
             max_acts_per_episode=500
         ):
         self.root_dir = root_dir
@@ -21,6 +22,7 @@ class NavDemoDataset(Dataset):
         self.topdown_map_root = SEM_MAP_SAVE_ROOT
         self.demo_merge_ratio = demo_merge_ratio
         self.episode_merge_ratio = episode_merge_ratio
+        self.p_merge_all_episode = p_merge_all_episode
         self.max_acts_per_episode = max_acts_per_episode
         
         if scene_id:
@@ -81,14 +83,18 @@ class NavDemoDataset(Dataset):
         
         return map_world_shift, map_resolution, map_semantic
     
-    def combine_turn_forward(self, demo_episode):
+    def combine_turn_forward(self, demo_episode, allow_full_merge=True):
         stop_id = len(demo_episode['demonstration']) - 1
         merge_id = []
         for i, act in enumerate(demo_episode['demonstration']):
             if "TURN" in act[0]:
                 merge_id.append(i)
         
-        merge_id = random.sample(merge_id, int(self.episode_merge_ratio * len(merge_id)))
+        if not allow_full_merge:
+            merge_id = random.sample(merge_id, int(self.episode_merge_ratio * len(merge_id)))
+        else:
+            if random.random() > self.p_merge_all_episode:
+                merge_id = random.sample(merge_id, int(self.episode_merge_ratio * len(merge_id)))
         
         for step in merge_id:
             demo_episode['demonstration'][step].extend(demo_episode['demonstration'][step+1])

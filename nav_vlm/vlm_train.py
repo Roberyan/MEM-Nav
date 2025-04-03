@@ -8,12 +8,11 @@ from transformers import Qwen2_5_VLForConditionalGeneration, Qwen2_5_VLProcessor
 from qwen_vl_utils import process_vision_info
 from peft import LoraConfig, get_peft_model
 from trl import SFTTrainer, SFTConfig
-from PIL import Image
 import torch
-import os
-import json
-from datasets import Dataset
 import wandb
+from tqdm import tqdm
+import argparse
+import random
 
 def prepare_hf_message(rgb_path, depth_path, object_goal, demo_action):
     nav_prompt =  f"{HINT_PANORAMA_VIEWS.format(goal_object=object_goal)}\
@@ -32,13 +31,11 @@ def prepare_hf_message(rgb_path, depth_path, object_goal, demo_action):
     ]
     return messages
 
-def build_train_data(demo_dataset):
+def build_hf_action_data(demo_dataset):
     data = []
-    for demo_episode in demo_dataset:
-        episode_id = demo_episode["episode_id"]
+    for demo_episode in tqdm(demo_dataset, desc="Demo episodes"):
         for i, act in enumerate(demo_episode["demonstration"]):
-            action_name, repeat = act
-            target = f"{action_name} {repeat}"
+            target = "; ".join(f"{act[i]} {act[i+1]}" for i in range(0, len(act), 2))
             messages = prepare_hf_message(
                 rgb_path=demo_episode["rgb_paths"][i],
                 depth_path=demo_episode["depth_paths"][i],
@@ -48,10 +45,19 @@ def build_train_data(demo_dataset):
             data.append(messages)
     return data
 
-def get_demo_dataset(data_root, scene=None):
+def get_demo_dataset(
+    data_root="data/datasets/objectnav/mp3d_70k_demos_for_vlm", 
+    scene=None, 
+    demo_merge=0.5, 
+    episode_merge=0.8,
+    p_merge_all=0.1
+):
     return NavDemoDataset(
         root_dir=data_root, 
-        scene_id=scene
+        scene_id=scene,
+        demo_merge_ratio=demo_merge,
+        episode_merge_ratio=episode_merge,
+        p_merge_all_episode=p_merge_all
     )
 
 def find_assistant_content_sublist_indexes(l):
@@ -88,41 +94,108 @@ def find_assistant_content_sublist_indexes(l):
                     break  # Move to the next start after finding the end
 
     return list(zip(start_indexes, end_indexes))
+
+def parse_args():
+    parser = argparse.ArgumentParser(description="Training script for Qwen2.5-VL model")
+    
+    parser.add_argument('--model_id', type=str, default="Qwen/Qwen2.5-VL-3B-Instruct" )
+    
+    parser.add_argument('--demo_root_dir', type=str, default="data/datasets/objectnav/mp3d_70k_demos_for_vlm")
+    
+    parser.add_argument('--output_dir', type=str, default="experiment_results/qwen25vl_lora")
+    parser.add_argument('--load_in_4bit', action='store_true', default=False)
+    parser.add_argument('--load_in_8bit', action='store_true', default=False)
+    parser.add_argument('--lora_target', type=str, default="all-linear")
+    
+    parser.add_argument('--report_to', type=str, default="wandb")
+    
+    parser.add_argument('--attn_implementation', type=str, default="flash_attention_2")
+    
+    
+    parser.add_argument('--deepspeed_config', type=str, default="nav_vlm/zero2.json")
+    # Add a --local_rank argument to accept distributed launcher arguments.
+    parser.add_argument("--local_rank", type=int, default=-1,
+                        help="Local rank. Necessary for using the torch.distributed.launch utility.")
+    
+    args = parser.parse_args()
+    return args
+
+
 if __name__ == "__main__":
-    ROOT_DIR = "data/datasets/objectnav/mp3d_70k_demos_for_vlm"
+    args = parse_args()
+    if args.local_rank == 1:
+        args.report_to = None
+    
     SCENE = "17DRP5sb8fy"
-    nav_demo_dataset = get_demo_dataset(ROOT_DIR, SCENE)
-    nav_demo_dataset = build_train_data(nav_demo_dataset)
-    eval_dataset = nav_demo_dataset[:1000]
-    train_dataset = nav_demo_dataset[1000:]
-    # hf_dataset = Dataset.from_list(train_dataset)
-    # train_dataset = hf_dataset.select(list(range(1000, len(hf_dataset))))
-    # eval_dataset = hf_dataset.select(list(range(0, 1000)))
+    nav_demo_dataset = get_demo_dataset(
+        args.demo_root_dir,
+        # SCENE,
+        demo_merge=0.7,
+        episode_merge=0.7,
+        p_merge_all=0.2
+    )
+    all_demos = nav_demo_dataset.get_demos()
+    random.seed(2025)
+    random.shuffle(all_demos)
     
+    num_eval = 100
+    eval_demos = all_demos[:num_eval]
+    train_demos = all_demos[num_eval:]
     
-    model_id = "Qwen/Qwen2.5-VL-3B-Instruct" 
-    # bnb_config = BitsAndBytesConfig(load_in_4bit=True, bnb_4bit_compute_dtype=torch.bfloat16)
+    eval_demos = NavDemoDataset.remove_long_demos(eval_demos, 300)
+    train_demos = NavDemoDataset.remove_long_demos(train_demos, 500)
+    
+    print(f"Train data: {len(train_demos)}, Eval data: {len(eval_demos)}.")
+    
+    eval_dataset = build_hf_action_data(eval_demos)
+    train_dataset =  build_hf_action_data(train_demos)
+    
+    bnb_config = None
+    if args.load_in_4bit:
+        bnb_config = BitsAndBytesConfig(
+            load_in_4bit=True,
+            bnb_4bit_use_double_quant=True,
+            bnb_4bit_quant_type="nf4",
+            bnb_4bit_compute_dtype=torch.bfloat16,
+        )
+    elif args.load_in_8bit:
+        bnb_config = BitsAndBytesConfig(load_in_8bit=True)
+    
     model = Qwen2_5_VLForConditionalGeneration.from_pretrained(
-        model_id,
-        device_map="auto",
+        args.model_id,
+        # device_map="auto",
         torch_dtype=torch.bfloat16,
-        # quantization_config=bnb_config,
+        quantization_config=bnb_config,
+        attn_implementation=args.attn_implementation,
         use_cache=False
     )
-    processor = Qwen2_5_VLProcessor.from_pretrained(model_id, use_fast=True)
+    processor = Qwen2_5_VLProcessor.from_pretrained(args.model_id, use_fast=True)
     processor.tokenizer.padding_side = "right"
     
     # === LoRA Config ===
+    lora_target = []
+    # only add LoRA target modules in the language model
+    for name, module in model.named_modules():
+        if "model" not in name or "lm_head" in name:
+            continue
+        if args.lora_target == "all-linear":
+            if isinstance(module, torch.nn.Linear):
+                lora_target.append(name)
+        else:
+            if args.lora_target in name:
+                lora_target.append(name)
+    
     peft_config = LoraConfig(
         r=128,
         lora_alpha=256,
         lora_dropout=0.05,
         bias="none",
-        target_modules=["q_proj", "v_proj"],
+        target_modules=lora_target,
         task_type="CAUSAL_LM"
     )
     model = get_peft_model(model, peft_config)
     model.print_trainable_parameters()
+    
     # === Data Collator ===
     def collate_fn(examples):
         texts = [
@@ -154,8 +227,8 @@ if __name__ == "__main__":
     # Training Arguments and Trainer Setup
     # -------------------------------
     training_args = SFTConfig(
-        output_dir="experiment_results/qwen25vl_lora",
-        num_train_epochs=2,
+        output_dir=args.output_dir,
+        num_train_epochs=1,
         dataloader_num_workers=4,  # Must be > 0
         dataloader_prefetch_factor=2,
         per_device_train_batch_size=8,
@@ -164,8 +237,8 @@ if __name__ == "__main__":
         gradient_checkpointing=True,
         # Optimizer and scheduler settings
         optim="paged_adamw_32bit",
-        learning_rate=2e-4,
-        lr_scheduler_type="constant",  # Type of learning rate scheduler
+        learning_rate=1e-5,
+        lr_scheduler_type="cosine",  # Type of learning rate scheduler
         # Logging and evaluation
         logging_steps=100,
         eval_steps=1000,
@@ -180,7 +253,7 @@ if __name__ == "__main__":
         tf32=True,  # Use TensorFloat-32 precision
         max_grad_norm=0.3,  # Maximum norm for gradient clipping
         warmup_ratio=0.03,  # Ratio of total steps for warmup
-        report_to="wandb",  # Enable wandb logging
+        report_to=args.report_to,  # Enable wandb logging
         # Gradient checkpointing settings
         gradient_checkpointing_kwargs={"use_reentrant": False},  # Options for gradient checkpointing
         remove_unused_columns=False,
@@ -188,13 +261,15 @@ if __name__ == "__main__":
         dataset_text_field="",  # Text field in dataset
         dataset_kwargs={"skip_prepare_dataset": True},  # Additional dataset options
         # max_seq_length=512, # Maximum sequence length for input
+        deepspeed=args.deepspeed_config
     )
     
-    wandb.init(
-        project="VLM-NAV",  # change this
-        name="qwen2.5-3b-instruct-trl-sft-nav",  # change this
-        config=training_args,
-    )
+    if args.report_to == "wandb":
+        wandb.init(
+            project="VLM-NAV",  # change this
+            name="qwen2.5-3b-instruct-trl-sft-nav",  # change this
+            config=training_args,
+        )
 
     trainer = SFTTrainer(
         model=model,
