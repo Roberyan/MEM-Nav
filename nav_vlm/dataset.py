@@ -3,7 +3,7 @@ from PIL import Image
 import torch
 from torch.utils.data import Dataset
 import os
-from constant import SEM_MAP_SAVE_ROOT
+from nav_vlm.constant import SEM_MAP_SAVE_ROOT
 import numpy as np
 import h5py
 
@@ -75,7 +75,7 @@ class NavDemoDataset(Dataset):
         return map_world_shift, map_resolution, map_semantic
     
     def __getitem__(self, idx):
-        demo = self.demos[idx]
+        demo = self.demos[idx] # one whole episodes
         return demo
 
 if __name__ == "__main__":

@@ -100,3 +100,5 @@ tb_fair/
 checkpoints
 tmp
 experiment_results
+wandb
+r2r
