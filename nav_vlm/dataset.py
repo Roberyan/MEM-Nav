@@ -14,12 +14,14 @@ class NavDemoDataset(Dataset):
             scene_id=None,
             demo_merge_ratio=0.5,
             episode_merge_ratio=0.5,
+            max_acts_per_episode=500
         ):
         self.root_dir = root_dir
         available_scenes = self.get_available_scenes()
         self.topdown_map_root = SEM_MAP_SAVE_ROOT
         self.demo_merge_ratio = demo_merge_ratio
         self.episode_merge_ratio = episode_merge_ratio
+        self.max_acts_per_episode = max_acts_per_episode
         
         if scene_id:
             if isinstance(scene_id, str):
@@ -103,6 +105,17 @@ class NavDemoDataset(Dataset):
             demo_episode[k] = [v[idx] for idx in range(len(v)) if idx not in merged_steps]
         
         return demo_episode
+    
+    @ staticmethod
+    def remove_long_demos(demos, max_act=-1):
+        max_act = max_act if max_act > 0 else self.max_acts_per_episode
+        return [
+            demo for demo in demos 
+            if len(demo['demonstration']) <= max_act
+        ]
+
+    def get_demos(self):
+        return self.demos
     
     def __getitem__(self, idx):
         demo = self.demos[idx] # one whole episodes
