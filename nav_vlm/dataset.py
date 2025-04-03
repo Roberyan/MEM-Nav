@@ -6,15 +6,20 @@ import os
 from nav_vlm.constant import SEM_MAP_SAVE_ROOT
 import numpy as np
 import h5py
+import random
 
 class NavDemoDataset(Dataset):
     def __init__(self, 
             root_dir,
-            scene_id=None
+            scene_id=None,
+            demo_merge_ratio=0.5,
+            episode_merge_ratio=0.5,
         ):
         self.root_dir = root_dir
         available_scenes = self.get_available_scenes()
         self.topdown_map_root = SEM_MAP_SAVE_ROOT
+        self.demo_merge_ratio = demo_merge_ratio
+        self.episode_merge_ratio = episode_merge_ratio
         
         if scene_id:
             if isinstance(scene_id, str):
@@ -74,8 +79,35 @@ class NavDemoDataset(Dataset):
         
         return map_world_shift, map_resolution, map_semantic
     
+    def combine_turn_forward(self, demo_episode):
+        stop_id = len(demo_episode['demonstration']) - 1
+        merge_id = []
+        for i, act in enumerate(demo_episode['demonstration']):
+            if "TURN" in act[0]:
+                merge_id.append(i)
+        
+        merge_id = random.sample(merge_id, int(self.episode_merge_ratio * len(merge_id)))
+        
+        for step in merge_id:
+            demo_episode['demonstration'][step].extend(demo_episode['demonstration'][step+1])
+            demo_episode['reward'][step] += demo_episode['reward'][step+1]
+            demo_episode['info'][step] = demo_episode['info'][step+1]
+        
+        merged_steps = [i+1 for i in merge_id]
+        if stop_id in merged_steps:
+            merged_steps.remove(stop_id)
+
+        for k, v in demo_episode.items():
+            if k in ['episode_id', 'floor_id', 'objectgoal', 'object_category']:
+                continue
+            demo_episode[k] = [v[idx] for idx in range(len(v)) if idx not in merged_steps]
+        
+        return demo_episode
+    
     def __getitem__(self, idx):
         demo = self.demos[idx] # one whole episodes
+        if random.random() < self.demo_merge_ratio:
+            demo = self.combine_turn_forward(demo)
         return demo
 
 if __name__ == "__main__":
