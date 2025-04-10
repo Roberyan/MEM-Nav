@@ -332,8 +332,11 @@ def extract_demo_obs_and_fts(args):
                 for x in env.current_episode.reference_replay[1:]
         ]
         demo_actions = [ACTION_MAPS[x] for x in demo_actions]
+        try:
+            floor_id = get_agent_current_floor_id(env.habitat_env.sim)
+        except:
+            floor_id = 0
         
-        floor_id = get_agent_current_floor_id(env.habitat_env.sim)
         if args.save_topdown_map:
             with h5py.File(scene_sem_map_path, "r") as fp:
                 # map_y = maps_info[scene_name][floor_id]['y_min']

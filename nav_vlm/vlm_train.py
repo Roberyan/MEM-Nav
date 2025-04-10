@@ -231,8 +231,8 @@ if __name__ == "__main__":
         num_train_epochs=1,
         dataloader_num_workers=4,  # Must be > 0
         dataloader_prefetch_factor=2,
-        per_device_train_batch_size=8,
-        per_device_eval_batch_size=8, 
+        per_device_train_batch_size=4,
+        per_device_eval_batch_size=4, 
         gradient_accumulation_steps=8,
         gradient_checkpointing=True,
         # Optimizer and scheduler settings
@@ -240,7 +240,7 @@ if __name__ == "__main__":
         learning_rate=1e-5,
         lr_scheduler_type="cosine",  # Type of learning rate scheduler
         # Logging and evaluation
-        logging_steps=100,
+        logging_steps=50,
         eval_steps=1000,
         save_steps=1000,
         eval_strategy="steps",
