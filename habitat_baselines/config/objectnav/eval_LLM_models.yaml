@@ -1,7 +1,7 @@
 # Note:  This is an example config, see habitat_baselines/config/pointnav/ppo_pointnav.yaml
 # for better hyperparameters for actual trainingsem_seg_pred
 
-BASE_TASK_CONFIG_PATH: "configs/tasks/objectnav_mp3d_il.yaml"
+BASE_TASK_CONFIG_PATH: "configs/tasks/objectnav_mp3d_il_llm.yaml"
 TRAINER_NAME: "ddp-il-trainer"
 ENV_NAME: NavRLEnv
 SIMULATOR_GPU_ID: 0
@@ -58,6 +58,7 @@ MODEL:
   action_clf_class: "text" # "linear"
   enc_collide_steps: False
   nav_type: "single_view" # surrounding_views
+  action_type: "single_step" # multi_steps
 
   ablate_depth: False
   ablate_rgb: False
