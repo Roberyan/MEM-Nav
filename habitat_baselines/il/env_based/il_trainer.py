@@ -58,6 +58,8 @@ try:
 except:
     pass
 
+from nav_vlm.extract_demo_data import create_rgb_panorama
+
 def write_to_jsonlines(filepath, item):
     with FileLock(filepath + '.lock'):
         with jsonlines.open(filepath, mode='a') as outf:
@@ -571,25 +573,31 @@ class ILEnvTrainer(BaseRLTrainer):
         ########### add surrounding views ##############
         if getattr(config, "USE_SURROUNDING", False):
             if "RGB_SENSOR" in config.TASK_CONFIG.SIMULATOR.AGENT_0.SENSORS:
-                CAMERA_NUM = 4
+                CAMERA_NUM = 3
+                hfov = 120
                 orientations = [
-                    [0, 0, 0],                # Front
-                    [0, math.pi / 2, 0],       # Right
-                    [0, math.pi, 0],          # Back
-                    [0, 3 / 2 * math.pi, 0],   # Left
+                    [0, 0, 0],                  # Front (0°)
+                    [0, 2 * math.pi / 3, 0],      # Right (120°)
+                    [0, 4 * math.pi / 3, 0],      # Left (240°)
                 ]
                 sensor_dir=[
-                    "front",
-                    "right",
-                    "back",
-                    "left"
-                ]
+                    "front", 
+                    "right", "left"]
                 self.sensor_uuids = []
-                default_rgb_sensor = deepcopy(config.TASK_CONFIG.SIMULATOR.RGB_SENSOR)
-                default_rgb_sensor.ORIENTATION = orientations[0]
                 for camera_id in range(CAMERA_NUM):
+                    # rgb
                     camera_template = f"RGB_{sensor_dir[camera_id]}"
                     camera_config = deepcopy(config.TASK_CONFIG.SIMULATOR.RGB_SENSOR)
+                    camera_config.HFOV = hfov
+                    camera_config.ORIENTATION = orientations[camera_id]
+                    camera_config.UUID = camera_template.lower()
+                    self.sensor_uuids.append(camera_config.UUID)
+                    setattr(config.TASK_CONFIG.SIMULATOR, camera_template, camera_config)
+                    config.SENSORS.append(camera_template)
+                    # depth
+                    camera_template = f"DEPTH_{sensor_dir[camera_id]}"
+                    camera_config = deepcopy(config.TASK_CONFIG.SIMULATOR.DEPTH_SENSOR)
+                    camera_config.HFOV = hfov
                     camera_config.ORIENTATION = orientations[camera_id]
                     camera_config.UUID = camera_template.lower()
                     self.sensor_uuids.append(camera_config.UUID)
@@ -1223,51 +1231,76 @@ class ILEnvTrainer(BaseRLTrainer):
             is_collide = False
             nav_step = 0
             while not done:
-                if len(self.config.VIDEO_OPTION) > 0:
-                    frame = observations_to_image(
-                        {"rgb": batch["rgb"][0]}, {}
-                    )
-                    rgb_frames.append(frame)
-
                 actions, recursive_states = self.policy(batch, recursive_states, prev_actions)
-                print(actions)
-                step_data = actions
                 
-                outputs = self.envs.step(step_data)
-                observations, rewards_l, dones, infos =  [
-                    x for x in zip(*outputs)
-                ]
-                done = dones[0]
-                current_episode_reward += rewards_l[0]
+                if config.MODEL.action_type == "single_step":
+                    step_data = actions
+                    outputs = self.envs.step(step_data)
+                    observations, rewards_l, dones, infos =  [
+                        x for x in zip(*outputs)
+                    ]
+                    done = dones[0]
+                    current_episode_reward += rewards_l[0]
 
-                if (all(np.isclose(observations[0]['gps'],  last_gps))) and \
-                   (all(np.isclose(observations[0]['compass'], last_compass))) and \
-                   (step_data[0] in ["MOVE_FORWARD", "TURN_LEFT", "TURN_RIGHT"]):
-                    is_collide = True
-                else:
-                    is_collide = False
-                # print(nav_step, is_collide, infos[0]['collisions'])
-                # print(last_gps, last_compass)
-                # print(observations[0]['gps'], observations[0]['compass'])
-                last_gps = observations[0]['gps']
-                last_compass = observations[0]['compass']
+                    if (all(np.isclose(observations[0]['gps'],  last_gps))) and \
+                    (all(np.isclose(observations[0]['compass'], last_compass))) and \
+                    (step_data[0] in ["MOVE_FORWARD", "TURN_LEFT", "TURN_RIGHT"]):
+                        is_collide = True
+                    else:
+                        is_collide = False
 
-                pred_trajectories['actions'].append(step_data[0])
-                pred_trajectories['infos'].append(infos[0])
+                    last_gps = observations[0]['gps']
+                    last_compass = observations[0]['compass']
 
-                if not is_collide:
-                    batch = batch_obs(observations, device=self.device)
-                    batch = process_batch_gps_compass(batch, gpscompass_noise_type)
-                    batch = apply_obs_transforms_batch(batch, self.obs_transforms)
+                    pred_trajectories['actions'].append(step_data[0])
+                    pred_trajectories['infos'].append(infos[0])
 
-                nav_step += 1
-                prev_actions.append((actions[0], is_collide))
+                    if not is_collide:
+                        batch = batch_obs(observations, device=self.device)
+                        batch = process_batch_gps_compass(batch, gpscompass_noise_type)
+                        batch = apply_obs_transforms_batch(batch, self.obs_transforms)
 
-            # print(current_episodes[0].object_category)
-            # print(pred_trajectories['actions'])
-            # print(pred_trajectories['infos'][0])
-            # print(infos[0])
-            # print()
+                    nav_step += 1
+                    prev_actions.append((actions[0], is_collide))
+                elif config.MODEL.action_type == "multi_steps":
+                    for multi_act in actions:
+                        if done:
+                            break  # break out of multi_act loop if episode ended
+                        act, times = multi_act.split(" ")
+                        step_data, times = [act], int(times)
+                        for i in range(int(times)):
+                            if len(self.config.VIDEO_OPTION) > 0:
+                                rgb_panorama = create_rgb_panorama(batch['rgb_right'].squeeze(0).cpu(), batch['rgb_front'].squeeze(0).cpu(), batch['rgb_left'].squeeze(0).cpu())
+                                rgb_frames.append(rgb_panorama)
+                            
+                            outputs = self.envs.step(step_data)
+                            observations, rewards_l, dones, infos =  [x for x in zip(*outputs)]
+                            done = dones[0]
+                            current_episode_reward += rewards_l[0]
+                            
+                            if (all(np.isclose(observations[0]['gps'],  last_gps))) and \
+                            (all(np.isclose(observations[0]['compass'], last_compass))) and \
+                            (step_data[0] in ["MOVE_FORWARD", "TURN_LEFT", "TURN_RIGHT"]):
+                                is_collide = True
+                            else:
+                                is_collide = False
+
+                            last_gps = observations[0]['gps']
+                            last_compass = observations[0]['compass']
+
+                            pred_trajectories['actions'].append(step_data[0])
+                            pred_trajectories['infos'].append(infos[0])
+
+                            batch = batch_obs(observations, device=self.device)
+                            batch = process_batch_gps_compass(batch, gpscompass_noise_type)
+                            batch = apply_obs_transforms_batch(batch, self.obs_transforms)
+
+                            nav_step += 1
+                            
+                            if is_collide or done:
+                                break
+                        prev_actions.append((f"{step_data[0]} {i+1}", is_collide))
+
             episode_stats = {}
             episode_stats["reward"] = current_episode_reward
             episode_stats.update(
