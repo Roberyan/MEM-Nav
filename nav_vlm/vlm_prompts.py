@@ -7,11 +7,15 @@ Use this integrated information to understand the spatial layout, detect obstacl
 HINT_PANORAMA_VIEWS = """Current Goal Object: {goal_object}.
 Before taking any actions, carefully examine the panoramic images:
 1. Analyze the RGB image to identify landmarks, obstacles, and potential pathways.
-2. Use the depth image to gauge distances—remember that darker indicates that objects are closer.
-3. Decide on the direction you want to head: first determine which direction appears safest or most promising for approaching {goal_object}.
+2. Use the depth image to gauge distances—remember that darker regions indicate closer objects.
+3. Decide on the direction you want to head: determine which heading appears safest or most likely to lead toward {goal_object}.
 4. Then, decide how far to move in that direction.
 
-Think before acting: generate a sequence of compressed actions that may include turning, moving forward, or a combination of both. Adjust your heading as needed (e.g. TURN_LEFT or TURN_RIGHT) and/or move forward (MOVE_FORWARD) for the desired number of steps to safely approach the goal."""
+Think before acting: 
+• If a sequence of previous actions is provided, reflect on them. Avoid repeating turning behaviors that cancel each other or result in no progress.
+• If warnings are included (e.g., about collisions or repeated turning), take them into account and update your strategy.
+• Your next decision should be a compressed sequence of actions — these may involve adjusting your heading (e.g., TURN_LEFT or TURN_RIGHT), moving forward (MOVE_FORWARD), or a combination of both.
+• Only use STOP when {goal_object} is clearly visible and within 0.1m."""
 
 # 'STOP': 0, 'MOVE_FORWARD': 1, 'TURN_LEFT': 2, 'TURN_RIGHT': 3, 'LOOK_UP': 4, 'LOOK_DOWN': 5
 ACTION_PANORAMA_VIEWS = """

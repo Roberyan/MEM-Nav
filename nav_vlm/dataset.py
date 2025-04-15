@@ -7,6 +7,7 @@ from nav_vlm.constant import SEM_MAP_SAVE_ROOT
 import numpy as np
 import h5py
 import random
+from tqdm import tqdm
 
 class NavDemoDataset(Dataset):
     def __init__(self, 
@@ -83,8 +84,8 @@ class NavDemoDataset(Dataset):
         
         return map_world_shift, map_resolution, map_semantic
     
-    def combine_turn_forward(self, demo_episode, allow_full_merge=True):
-        stop_id = len(demo_episode['demonstration']) - 1
+    def combine_turn_forward(self, demo_episode, allow_full_merge=True, remove_merged_step=False):
+        stop_ids = [i for i in range(len(demo_episode['demonstration'])) if "STOP" in demo_episode['demonstration'][i]]
         merge_id = []
         for i, act in enumerate(demo_episode['demonstration']):
             if "TURN" in act[0]:
@@ -94,31 +95,56 @@ class NavDemoDataset(Dataset):
             merge_id = random.sample(merge_id, int(self.episode_merge_ratio * len(merge_id)))
         else:
             if random.random() > self.p_merge_all_episode:
-                merge_id = random.sample(merge_id, int(self.episode_merge_ratio * len(merge_id)))
+                merge_id = merge_id
         
         for step in merge_id:
-            demo_episode['demonstration'][step].extend(demo_episode['demonstration'][step+1])
-            demo_episode['reward'][step] += demo_episode['reward'][step+1]
-            demo_episode['info'][step] = demo_episode['info'][step+1]
+            act, amount = demo_episode['demonstration'][step+1]
+            if amount < 10:
+                demo_episode['demonstration'][step].extend(demo_episode['demonstration'][step+1])
+                demo_episode['reward'][step] += demo_episode['reward'][step+1]
+                demo_episode['info'][step] = demo_episode['info'][step+1]
+            else:
+                stop_ids.append(step+1)
         
-        merged_steps = [i+1 for i in merge_id]
-        if stop_id in merged_steps:
-            merged_steps.remove(stop_id)
+        if remove_merged_step:
+            merged_steps = [i+1 for i in merge_id]
+            for stop_id in stop_ids:
+                if stop_id in merged_steps:
+                    merged_steps.remove(stop_id)
 
-        for k, v in demo_episode.items():
-            if k in ['episode_id', 'floor_id', 'objectgoal', 'object_category']:
-                continue
-            demo_episode[k] = [v[idx] for idx in range(len(v)) if idx not in merged_steps]
+            for k, v in demo_episode.items():
+                if k in ['episode_id', 'floor_id', 'objectgoal', 'object_category']:
+                    continue
+                demo_episode[k] = [v[idx] for idx in range(len(v)) if idx not in merged_steps]
         
         return demo_episode
     
     @ staticmethod
     def remove_long_demos(demos, max_act=-1):
-        max_act = max_act if max_act > 0 else self.max_acts_per_episode
+        max_act = max_act if max_act > 0 else 500
         return [
             demo for demo in demos 
             if len(demo['demonstration']) <= max_act
         ]
+
+    def merge_demos(self, allow_full_merge=True, remove_merged_step=False):
+        for i in tqdm(range(len(self.demos)), desc="Processing episodes to merge mixed action sequence..."):
+            if random.random() < self.demo_merge_ratio:
+                self.demos[i] = self.combine_turn_forward(self.demos[i], allow_full_merge, remove_merged_step)
+    
+    def increase_stop_demos(self): # after this function stop related info can not be used.
+        cnt = 0
+        for i in tqdm(range(len(self.demos)), desc="Processing episodes and transfer action to be STOP..."):
+            demo_episode = self.demos[i]
+            n_acts = len(demo_episode['demonstration'])
+            
+            for j in range(1, n_acts-1):
+                if demo_episode['info'][j-1]['distance_to_goal'] < 0.07:  # can STOP already
+                    demo_episode['demonstration'][j] = ['STOP', 1]
+                    demo_episode['reward'][j] = demo_episode['reward'][j] + 2.5
+                    cnt += 1
+            self.demos[i] = demo_episode
+        print(f"{cnt} samples can use STOP action because already within success range 0.1m.")
 
     def get_demos(self):
         return self.demos

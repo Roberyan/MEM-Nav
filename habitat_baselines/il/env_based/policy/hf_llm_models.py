@@ -132,6 +132,20 @@ class ObjectNavHFVLM(ObjectNavBase):
         ]
         return messages
 
+    def force_action_format(self, actions):
+        cleaned = []
+        for a in actions:
+            parts = a.split()
+
+            if len(parts) == 1:
+                if parts[0] in self.action_space.keys():
+                    cleaned.append(f"{parts[0]} 1")
+            elif len(parts) == 2 and parts[0] in self.action_space.keys():
+                value = float(parts[1])
+                int_value = max(1, round(value))  # Round to nearest integer ≥ 1
+                cleaned.append(f"{parts[0]} {int_value}")
+        return cleaned
+    
     def forward(self, batch, history_embeds, prev_actions):
         # dict_keys(['rgb', 'semantic', 'depth', 'objectgoal', 'compass', 'gps'])
         device = batch['gps'].device
@@ -280,21 +294,21 @@ class ObjectNavHFVLM(ObjectNavBase):
                 actions = self.processor.batch_decode(
                     generated_ids_trimmed, skip_special_tokens=True, clean_up_tokenization_spaces=False
                 )
-                
+                actions = [act.strip().split("; ")[:2] for act in actions]
                 if "collision" in warnings:
-                    no_forward_acts = [act for act in actions if "TURN" in act]
+                    no_forward_acts = [act for act in actions if all("TURN" in a for a in act)]
                     if len(no_forward_acts):
-                        actions = random.sample(no_forward_acts, 1)
+                        actions = random.sample(no_forward_acts, 1)[0]  
                     else:
                         random_turn=f"{random.choice(['TURN_LEFT', 'TURN_RIGHT'])} 1"
-                        actions = random.sample(actions, 1)
+                        actions = random.sample(actions, 1)[0]
                         actions.insert(0, random_turn)
                 elif "turning" in warnings:
-                    no_turn_acts = [act for act in actions if "TURN" not in act]
+                    no_turn_acts = [act for act in actions if any("TURN" not in a for a in act)]
                     if len(no_turn_acts):
-                        actions = random.sample(no_turn_acts, 1)
+                        actions = random.sample(no_turn_acts, 1)[0]
                     else:
-                        actions = random.sample(actions, 1)
+                        actions = random.sample(actions, 1)[0]
                         actions.append("MOVE_FORWARD 1")
                 print(former_acts, warnings, actions, "\n")
             else:
@@ -308,7 +322,11 @@ class ObjectNavHFVLM(ObjectNavBase):
                 actions = self.processor.batch_decode(
                     generated_ids_trimmed, skip_special_tokens=True, clean_up_tokenization_spaces=False
                 )
+                actions = actions[0].strip().split("; ")
+                if len(actions) > 2:
+                    actions = actions[:2]
             
                 print(former_acts, "\n", actions, "\n")
             
+            actions = self.force_action_format(actions)
             return actions, history_embeds

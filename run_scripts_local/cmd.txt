@@ -3,3 +3,10 @@ bash run_scripts_local/onav_eval_imap_transformer.sh /home/marmot/Boyang/MEM-Nav
 python -m habitat_sim.utils.datasets_download --uids ycb --data-path data/
 ln -s data/test_assets/objects data/assets/objects/ycb_google_16k_v2
 mv data/assets/objects/ycb_google_16k_v2/configs data/assets/objects/ycb_google_16k_v2/configs_gltf
+
+#!/bin/bash
+export PYTHONPATH=$PYTHONPATH:$(pwd)/dependencies/habitat-sim
+
+python nav_vlm/extract_demo_data.py   --cfg_file habitat_baselines/config/objectnav/il_ddp_objectnav.yaml   --scene_id all --save_semantic_fts --save_rgb  --outdir data/datasets/objectnav/mp3d_70k_demos_for_vlm
+
+deepspeed --num_gpus=2 nav_vlm/vlm_train.py

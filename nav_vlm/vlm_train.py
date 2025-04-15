@@ -130,15 +130,17 @@ if __name__ == "__main__":
     nav_demo_dataset = get_demo_dataset(
         args.demo_root_dir,
         # SCENE,
-        demo_merge=0.7,
-        episode_merge=0.7,
-        p_merge_all=0.2
+        demo_merge=0.8, # how much episode to merge
+        episode_merge=0.7, # in each demo, how much action to merge
+        p_merge_all=0.2 # merge all action in that demo
     )
+    nav_demo_dataset.increase_stop_demos()
+    nav_demo_dataset.merge_demos(allow_full_merge=True, remove_merged_step=False)
     all_demos = nav_demo_dataset.get_demos()
     random.seed(2025)
     random.shuffle(all_demos)
     
-    num_eval = 100
+    num_eval = 223
     eval_demos = all_demos[:num_eval]
     train_demos = all_demos[num_eval:]
     
@@ -267,7 +269,7 @@ if __name__ == "__main__":
     if args.report_to == "wandb":
         wandb.init(
             project="VLM-NAV",  # change this
-            name="qwen2.5-3b-instruct-trl-sft-nav",  # change this
+            name="qwen2.5-3b-instruct-trl-sft-nav-all-demo-mix-add-stop-add",  # change this
             config=training_args,
         )
 
