@@ -1,5 +1,13 @@
 # MEM-Nav
 
+## Introduction
+
+end-2-end Vision Language Navigation for object goal naivgation, supporting using huggingface models, tested successfully with qwen2.5 VL. 
+
+Imitation Learning already shows promising results than former traditional methods, serves as my master graduation projects.
+
+Feel free to contact and see if we can collaborate together, believe that memory machinism will yield more results.
+
 ## Installation
 
 ```bash
